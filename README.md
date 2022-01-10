@@ -51,6 +51,14 @@ $ solana-test-validator
 $ make test
 ```
 
+## **4. Code coverage**
+
+```bash
+$ make coverage
+```
+
+Afterwards, coverage report is available in `target/cov/LATEST/`.
+
 # Getting Help
 
 Join us on our [Discord server](https://discord.gg/aVBUCmNU)

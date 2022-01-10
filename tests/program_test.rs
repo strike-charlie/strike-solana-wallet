@@ -32,6 +32,8 @@ async fn init_program() {
         &program_owner,
         &program_config_account,
         &assistant_account,
+        None,
+        None,
     )
     .await
     .unwrap();

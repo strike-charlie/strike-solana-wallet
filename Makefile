@@ -7,3 +7,6 @@ deploy_and_test: build
 
 test:
 	cargo test-bpf
+
+coverage:
+	./coverage.sh

@@ -9,6 +9,7 @@ use {
     },
     solana_program::{
         program_pack::Pack,
+        pubkey::Pubkey,
     },
     strike_wallet::{
         instruction::{
@@ -24,6 +25,8 @@ pub async fn init_program(
     program_owner: &Keypair,
     program_config_account: &Keypair,
     assistant_account: &Keypair,
+    approvals_required_for_config: Option<u8>,
+    config_approvers: Option<Vec<Pubkey>>,
 ) -> Result<(), TransportError> {
     let rent = banks_client.get_rent().await.unwrap();
     let program_rent = rent.minimum_balance(ProgramConfig::LEN);
@@ -41,10 +44,9 @@ pub async fn init_program(
                 &program_owner.pubkey(),
                 &program_config_account.pubkey(),
                 &assistant_account.pubkey(),
-                Vec::new(),
-                0,
-            ).unwrap(),
-        ],
+                config_approvers.unwrap_or(Vec::new()),
+                approvals_required_for_config.unwrap_or(0),
+            ).unwrap(),],
         Some(&payer.pubkey()),
         &[payer, program_config_account, assistant_account],
         recent_blockhash,
