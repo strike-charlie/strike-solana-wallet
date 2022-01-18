@@ -8,6 +8,7 @@ use solana_program::system_program;
 use solana_program::{
     instruction::AccountMeta,
     pubkey::{Pubkey, PUBKEY_BYTES},
+    sysvar
 };
 
 use crate::model::multisig_op::ApprovalDisposition;
@@ -22,6 +23,7 @@ pub enum ProgramInstruction {
     /// 0  `[writable]` The multisig operation account
     /// 1. `[]` The program config account
     /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 3. `[]` The sysvar clock account
     InitConfigUpdate { config_update: ProgramConfigUpdate },
 
     /// 0  `[writable]` The multisig operation account
@@ -32,6 +34,7 @@ pub enum ProgramInstruction {
     /// 0  `[writable]` The multisig operation account
     /// 1. `[]` The program config account
     /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 3. `[]` The sysvar clock account
     InitWalletCreation {
         wallet_guid_hash: [u8; 32],
         config_update: WalletConfigUpdate,
@@ -40,7 +43,7 @@ pub enum ProgramInstruction {
     /// 0  `[writable]` The multisig operation account
     /// 1. `[]` The program config account
     /// 2. `[writable]` The wallet config account
-    /// 2. `[signer]` The rent collector account
+    /// 3. `[signer]` The rent collector account
     FinalizeWalletCreation {
         wallet_guid_hash: [u8; 32],
         config_update: WalletConfigUpdate,
@@ -50,6 +53,7 @@ pub enum ProgramInstruction {
     /// 1. `[]` The wallet config account
     /// 2. `[]` The program config account
     /// 3. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 4. `[]` The sysvar clock account
     InitWalletConfigUpdate {
         wallet_guid_hash: [u8; 32],
         config_update: WalletConfigUpdate,
@@ -58,6 +62,7 @@ pub enum ProgramInstruction {
     /// 0  `[writable]` The multisig operation account
     /// 1. `[writable]` The wallet config account
     /// 2. `[signer]` The rent collector account
+    /// 3. `[]` The sysvar clock account
     FinalizeWalletConfigUpdate {
         wallet_guid_hash: [u8; 32],
         config_update: WalletConfigUpdate,
@@ -70,6 +75,7 @@ pub enum ProgramInstruction {
     /// 4. `[signer]` The fee payer account
     /// 5. `[]` The program config account
     /// 6. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 7. `[]` The sysvar clock account
     InitTransfer {
         amount: u64,
         destination_name_hash: [u8; 32],
@@ -79,6 +85,7 @@ pub enum ProgramInstruction {
     /// 0  `[writable]` The multisig operation account
     /// 1. `[signer]` The approver account
     /// 2. `[signer]` The fee payer account
+    /// 3. `[]` The sysvar clock account
     SetApprovalDisposition { disposition: ApprovalDisposition },
 
     /// 0  `[writable]` The multisig operation account
@@ -91,6 +98,7 @@ pub enum ProgramInstruction {
     /// 7. `[writable]` The destination token account, if this is an SPL transfer
     /// 8. `[]` The SPL token program account, if this is an SPL transfer
     /// 9. `[]` The token mint authority, if this is an SPL transfer
+    /// 10. `[]` The sysvar clock account
     FinalizeTransfer { amount: u64, token_mint: Pubkey },
 }
 
@@ -337,6 +345,7 @@ impl ProgramInstruction {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ProgramConfigUpdate {
     pub approvals_required_for_config: u8,
+    pub approval_timeout_for_config: i64,
     pub add_approvers: Vec<Pubkey>,
     pub remove_approvers: Vec<Pubkey>,
 }
@@ -347,6 +356,8 @@ impl ProgramConfigUpdate {
             return Err(ProgramError::InvalidInstructionData);
         }
         let (approvals_config_bytes, rest) = bytes.split_at(1);
+        let approval_timeout = unpack_timeout(rest)?;
+        let (_, rest) = rest.split_at(8);
 
         let add_approvers = unpack_approvers(rest)?;
         let (_, remove_approvers_bytes) = rest.split_at(add_approvers.len() * PUBKEY_BYTES + 1);
@@ -354,19 +365,21 @@ impl ProgramConfigUpdate {
 
         Ok(ProgramConfigUpdate {
             approvals_required_for_config: approvals_config_bytes[0],
+            approval_timeout_for_config: approval_timeout,
             add_approvers,
             remove_approvers,
         })
     }
 
     pub fn pack(&self, dst: &mut Vec<u8>) {
-        let add_approvers_offset = 1;
+        let add_approvers_offset = 9;
         let remove_approvers_offset =
             add_approvers_offset + 1 + self.add_approvers.len() * PUBKEY_BYTES;
         let len = remove_approvers_offset + 1 + self.remove_approvers.len() * PUBKEY_BYTES;
 
         dst.resize(dst.len() + len, 0);
         dst[0] = self.approvals_required_for_config;
+        dst[1..9].copy_from_slice(&self.approval_timeout_for_config.to_le_bytes());
 
         dst[add_approvers_offset] = self.add_approvers.len() as u8;
         dst[add_approvers_offset + 1..remove_approvers_offset]
@@ -386,6 +399,7 @@ impl ProgramConfigUpdate {
 pub struct WalletConfigUpdate {
     pub name_hash: [u8; 32],
     pub approvals_required_for_transfer: u8,
+    pub approval_timeout_for_transfer: i64,
     pub add_approvers: Vec<Pubkey>,
     pub remove_approvers: Vec<Pubkey>,
     pub add_allowed_destinations: Vec<AllowedDestination>,
@@ -399,6 +413,8 @@ impl WalletConfigUpdate {
         }
         let (name_hash_bytes, rest) = bytes.split_at(32);
         let (approvals_config_bytes, rest) = rest.split_at(1);
+        let approval_timeout = unpack_timeout(rest)?;
+        let (_, rest) = rest.split_at(8);
 
         let add_approvers = unpack_approvers(rest)?;
         let (_, remove_approvers_bytes) = rest.split_at(add_approvers.len() * PUBKEY_BYTES + 1);
@@ -419,6 +435,7 @@ impl WalletConfigUpdate {
                 .ok()
                 .ok_or(ProgramError::InvalidInstructionData)?,
             approvals_required_for_transfer: approvals_config_bytes[0],
+            approval_timeout_for_transfer: approval_timeout,
             add_approvers,
             remove_approvers,
             add_allowed_destinations,
@@ -440,7 +457,8 @@ impl WalletConfigUpdate {
 
     pub fn pack(&self, dst: &mut Vec<u8>) {
         let approvals_required_for_transfer_offset = 32;
-        let add_approvers_offset = approvals_required_for_transfer_offset + 1;
+        let approval_timeout_offset = approvals_required_for_transfer_offset + 1;
+        let add_approvers_offset = approval_timeout_offset + 8;
         let remove_approvers_offset =
             add_approvers_offset + 1 + self.add_approvers.len() * PUBKEY_BYTES;
         let add_allowed_destinations_offset =
@@ -455,6 +473,7 @@ impl WalletConfigUpdate {
         dst.resize(dst.len() + len, 0);
         dst[0..approvals_required_for_transfer_offset].copy_from_slice(&self.name_hash);
         dst[approvals_required_for_transfer_offset] = self.approvals_required_for_transfer;
+        dst[approval_timeout_offset..add_approvers_offset].copy_from_slice(&self.approval_timeout_for_transfer.to_le_bytes());
 
         dst[add_approvers_offset] = self.add_approvers.len() as u8;
         dst[add_approvers_offset + 1..remove_approvers_offset]
@@ -502,15 +521,24 @@ fn unpack_wallet_guid_hash(bytes: &[u8]) -> Result<[u8; 32], ProgramError> {
         .ok_or(ProgramError::InvalidInstructionData)
 }
 
+fn unpack_timeout(bytes: &[u8]) -> Result<i64, ProgramError> {
+    bytes.get(..8)
+        .and_then(|slice| slice.try_into().ok())
+        .map(i64::from_le_bytes)
+        .ok_or(ProgramError::InvalidInstructionData)
+}
+
 pub fn program_init(
     program_id: &Pubkey,
     program_config_account: &Pubkey,
     assistant_account: &Pubkey,
     config_approvers: Vec<Pubkey>,
     approvals_required_for_config: u8,
+    approval_timeout_for_config: i64,
 ) -> Instruction {
     let config_update = ProgramConfigUpdate {
         approvals_required_for_config,
+        approval_timeout_for_config,
         add_approvers: config_approvers.clone(),
         remove_approvers: Vec::new(),
     };
@@ -545,6 +573,7 @@ fn init_multisig_op(
     }
     accounts.push(AccountMeta::new_readonly(*program_config_account, false));
     accounts.push(AccountMeta::new_readonly(*assistant_account, true));
+    accounts.push(AccountMeta::new_readonly(sysvar::clock::id(), false));
 
     Instruction {
         program_id: *program_id,
@@ -559,11 +588,13 @@ pub fn program_init_config_update(
     multisig_op_account: &Pubkey,
     assistant_account: &Pubkey,
     approvals_required_for_config: u8,
+    approval_timeout_for_config: i64,
     add_approvers: Vec<Pubkey>,
     remove_approvers: Vec<Pubkey>,
 ) -> Instruction {
     let config_update = ProgramConfigUpdate {
         approvals_required_for_config,
+        approval_timeout_for_config,
         add_approvers: add_approvers.clone(),
         remove_approvers: remove_approvers.clone(),
     };
@@ -585,10 +616,10 @@ pub fn set_approval_disposition(
     program_id: &Pubkey,
     multisig_op_account: &Pubkey,
     approver: &Pubkey,
-    payer: &Pubkey,
+    disposition: ApprovalDisposition
 ) -> Instruction {
     let data = ProgramInstruction::SetApprovalDisposition {
-        disposition: ApprovalDisposition::APPROVE,
+        disposition: disposition,
     }
     .borrow()
     .pack();
@@ -596,7 +627,7 @@ pub fn set_approval_disposition(
     let accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new_readonly(*approver, true),
-        AccountMeta::new_readonly(*payer, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false)
     ];
 
     Instruction {
@@ -621,6 +652,7 @@ pub fn finalize_config_update(
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new(*program_config_account, false),
         AccountMeta::new_readonly(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
 
     Instruction {
@@ -638,6 +670,7 @@ pub fn init_wallet_creation(
     wallet_guid_hash: [u8; 32],
     name_hash: [u8; 32],
     approvals_required_for_transfer: u8,
+    approval_timeout_for_transfer: i64,
     approvers: Vec<Pubkey>,
     allowed_destinations: Vec<AllowedDestination>,
 ) -> Instruction {
@@ -646,6 +679,7 @@ pub fn init_wallet_creation(
         config_update: WalletConfigUpdate {
             name_hash,
             approvals_required_for_transfer,
+            approval_timeout_for_transfer,
             add_approvers: approvers,
             remove_approvers: vec![],
             add_allowed_destinations: allowed_destinations,
@@ -686,6 +720,7 @@ pub fn finalize_wallet_creation(
         AccountMeta::new_readonly(*program_config_account, false),
         AccountMeta::new(*wallet_config_account, false),
         AccountMeta::new_readonly(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
 
     Instruction {
@@ -704,6 +739,7 @@ pub fn init_wallet_config_update(
     wallet_guid_hash: [u8; 32],
     name_hash: [u8; 32],
     approvals_required_for_transfer: u8,
+    approval_timeout_for_transfer: i64,
     add_approvers: Vec<Pubkey>,
     remove_approvers: Vec<Pubkey>,
     add_allowed_destinations: Vec<AllowedDestination>,
@@ -714,6 +750,7 @@ pub fn init_wallet_config_update(
         config_update: WalletConfigUpdate {
             name_hash,
             approvals_required_for_transfer,
+            approval_timeout_for_transfer,
             add_approvers,
             remove_approvers,
             add_allowed_destinations,
@@ -752,6 +789,7 @@ pub fn finalize_wallet_config_update(
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new(*wallet_config_account, false),
         AccountMeta::new_readonly(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
 
     Instruction {
@@ -788,6 +826,7 @@ pub fn init_transfer(
         AccountMeta::new_readonly(*destination_account, false),
         AccountMeta::new_readonly(*program_config_account, false),
         AccountMeta::new_readonly(*assistant_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false)
     ];
 
     Instruction {
@@ -822,6 +861,7 @@ pub fn finalize_transfer(
         AccountMeta::new_readonly(*wallet_config_account, false),
         AccountMeta::new_readonly(system_program::id(), false),
         AccountMeta::new_readonly(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
     if *token_mint != system_program::id() {
         // SPL

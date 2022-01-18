@@ -3,6 +3,7 @@ use crate::instruction::{ProgramConfigUpdate, WalletConfigUpdate};
 use crate::model::program_config::ProgramConfig;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use solana_program::account_info::AccountInfo;
+use solana_program::clock::Clock;
 use solana_program::entrypoint::ProgramResult;
 use solana_program::hash::{hash, Hash};
 use solana_program::msg;
@@ -32,6 +33,35 @@ impl ApprovalDisposition {
             ApprovalDisposition::NONE => 0,
             ApprovalDisposition::APPROVE => 1,
             ApprovalDisposition::DENY => 2,
+        }
+    }
+}
+
+#[derive(Debug,PartialEq, Eq, Hash, Clone, Copy)]
+pub enum OperationDisposition {
+    NONE = 0,
+    APPROVED = 1,
+    DENIED = 2,
+    EXPIRED = 3
+}
+
+impl OperationDisposition {
+    pub fn from_u8(value: u8) -> OperationDisposition {
+        match value {
+            0 => OperationDisposition::NONE,
+            1 => OperationDisposition::APPROVED,
+            2 => OperationDisposition::DENIED,
+            3 => OperationDisposition::EXPIRED,
+            _ => OperationDisposition::NONE,
+        }
+    }
+
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            OperationDisposition::NONE => 0,
+            OperationDisposition::APPROVED => 1,
+            OperationDisposition::DENIED => 2,
+            OperationDisposition::EXPIRED => 3,
         }
     }
 }
@@ -70,6 +100,9 @@ pub struct MultisigOp {
     pub disposition_records: Vec<ApprovalDispositionRecord>,
     pub dispositions_required: u8,
     pub params_hash: Hash,
+    pub approval_timeout: i64,
+    pub expires_at: i64,
+    pub operation_disposition: OperationDisposition
 }
 
 impl MultisigOp {
@@ -84,6 +117,8 @@ impl MultisigOp {
         &mut self,
         approvers: Vec<Pubkey>,
         approvals_required: u8,
+        approval_timeout: i64,
+        expires_at: i64,
         params: MultisigOpParams,
     ) -> ProgramResult {
         self.disposition_records = approvers
@@ -96,6 +131,9 @@ impl MultisigOp {
         self.dispositions_required = approvals_required;
         self.params_hash = params.hash();
         self.is_initialized = true;
+        self.approval_timeout = approval_timeout;
+        self.expires_at = expires_at;
+        self.operation_disposition = OperationDisposition::NONE;
 
         Ok(())
     }
@@ -104,6 +142,7 @@ impl MultisigOp {
         &mut self,
         approver: &AccountInfo,
         disposition: ApprovalDisposition,
+        clock: &Clock
     ) -> ProgramResult {
         if disposition != ApprovalDisposition::APPROVE && disposition != ApprovalDisposition::DENY {
             msg!("Invalid Disposition provided");
@@ -129,23 +168,40 @@ impl MultisigOp {
             msg!("Approver is not a configured approver");
             return Err(WalletError::InvalidApprover.into());
         }
+        self.update_operation_disposition(clock);
 
         Ok(())
     }
 
-    pub fn approved(&self, expected_params: &MultisigOpParams) -> Result<bool, ProgramError> {
+    pub fn update_operation_disposition(&mut self, clock: &Clock) -> OperationDisposition {
+        if self.operation_disposition != OperationDisposition::NONE {
+            return self.operation_disposition
+        }
+        if clock.unix_timestamp > self.expires_at {
+            self.operation_disposition = OperationDisposition::EXPIRED
+        } else if self.get_disposition_count(ApprovalDisposition::APPROVE) == self.dispositions_required {
+            self.operation_disposition = OperationDisposition::APPROVED
+        } else if self.get_disposition_count(ApprovalDisposition::DENY) == self.dispositions_required {
+            self.operation_disposition = OperationDisposition::DENIED
+        }
+        return self.operation_disposition
+    }
+
+
+    pub fn approved(&self, expected_params: &MultisigOpParams, clock: &Clock) -> Result<bool, ProgramError> {
         if expected_params.hash() != self.params_hash {
             return Err(WalletError::InvalidSignature.into());
         }
 
-        let num_approvals_received = self.get_disposition_count(ApprovalDisposition::APPROVE);
-        let num_denials_received = self.get_disposition_count(ApprovalDisposition::DENY);
-
-        if num_approvals_received + num_denials_received < self.dispositions_required {
+        if self.operation_disposition == OperationDisposition::NONE && clock.unix_timestamp < self.expires_at {
             return Err(WalletError::TransferDispositionNotFinal.into());
         }
 
-        Ok(num_approvals_received == self.dispositions_required)
+        if self.operation_disposition == OperationDisposition::APPROVED {
+            return Ok(true)
+        }
+
+        Ok(false)
     }
 }
 
@@ -159,7 +215,7 @@ impl IsInitialized for MultisigOp {
 
 impl Pack for MultisigOp {
     const LEN: usize =
-        1 + ApprovalDispositionRecord::LEN * ProgramConfig::MAX_APPROVERS + 1 + 1 + 32;
+        1 + ApprovalDispositionRecord::LEN * ProgramConfig::MAX_APPROVERS + 1 + 1 + 32 + 8 + 8 + 1;
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let dst = array_mut_ref![dst, 0, MultisigOp::LEN];
@@ -169,13 +225,19 @@ impl Pack for MultisigOp {
             disposition_records_dst,
             dispositions_required_for_transfer_dst,
             hash_dst,
+            approval_timeout_dst,
+            expires_at_dst,
+            operation_disposition_dst
         ) = mut_array_refs![
             dst,
             1,
             1,
             ApprovalDispositionRecord::LEN * ProgramConfig::MAX_APPROVERS,
             1,
-            32
+            32,
+            8,
+            8,
+            1
         ];
 
         let MultisigOp {
@@ -183,10 +245,16 @@ impl Pack for MultisigOp {
             disposition_records,
             dispositions_required: dispositions_required_for_transfer,
             params_hash: hash,
+            approval_timeout,
+            expires_at,
+            operation_disposition
         } = self;
 
         is_initialized_dst[0] = *is_initialized as u8;
         dispositions_required_for_transfer_dst[0] = *dispositions_required_for_transfer;
+        *approval_timeout_dst = approval_timeout.to_le_bytes();
+        *expires_at_dst = expires_at.to_le_bytes();
+        operation_disposition_dst[0] = operation_disposition.to_u8();
 
         disposition_records_count_dst[0] = disposition_records.len() as u8;
         disposition_records_dst.fill(0);
@@ -206,13 +274,19 @@ impl Pack for MultisigOp {
             disposition_record_bytes,
             dispositions_required_for_transfer,
             hash,
+            approval_timeout,
+            expires_at,
+            operation_disposition
         ) = array_refs![
             src,
             1,
             1,
             ApprovalDispositionRecord::LEN * ProgramConfig::MAX_APPROVERS,
             1,
-            32
+            32,
+            8,
+            8,
+            1
         ];
         let is_initialized = match is_initialized {
             [0] => false,
@@ -235,6 +309,9 @@ impl Pack for MultisigOp {
             disposition_records,
             dispositions_required: dispositions_required_for_transfer[0],
             params_hash: Hash::new_from_array(*hash),
+            approval_timeout: i64::from_le_bytes(*approval_timeout),
+            expires_at: i64::from_le_bytes(*expires_at),
+            operation_disposition: OperationDisposition::from_u8(operation_disposition[0])
         })
     }
 }

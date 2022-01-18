@@ -13,6 +13,7 @@ use solana_program::pubkey::{Pubkey, PUBKEY_BYTES};
 pub struct ProgramConfig {
     pub is_initialized: bool,
     pub approvals_required_for_config: u8,
+    pub approval_timeout_for_config: i64,
     pub config_approvers: Vec<Pubkey>,
     pub assistant: Pubkey,
 }
@@ -82,6 +83,9 @@ impl ProgramConfig {
     pub fn update(&mut self, config_update: &ProgramConfigUpdate) -> ProgramResult {
         self.validate_update(config_update)?;
         self.approvals_required_for_config = config_update.approvals_required_for_config;
+        if config_update.approval_timeout_for_config > 0 {
+            self.approval_timeout_for_config = config_update.approval_timeout_for_config;
+        }
 
         if config_update.add_approvers.len() > 0 || config_update.remove_approvers.len() > 0 {
             for approver_to_remove in &config_update.remove_approvers {
@@ -100,6 +104,7 @@ impl ProgramConfig {
 impl Pack for ProgramConfig {
     const LEN: usize = 1 + // is_initialized
         1 + // approvals_required_for_config
+        8 + // approval_timeout_for_config
         1 + PUBKEY_BYTES * ProgramConfig::MAX_APPROVERS + // config_approvers with size
         PUBKEY_BYTES; // assistant account pubkey
 
@@ -108,6 +113,7 @@ impl Pack for ProgramConfig {
         let (
             is_initialized_dst,
             approvals_required_for_config_dst,
+            approval_timeout_for_config_dst,
             config_approvers_count_dst,
             config_approvers_dst,
             assistant_account_dst,
@@ -115,6 +121,7 @@ impl Pack for ProgramConfig {
             dst,
             1,
             1,
+            8,
             1,
             PUBKEY_BYTES * ProgramConfig::MAX_APPROVERS,
             PUBKEY_BYTES
@@ -123,12 +130,14 @@ impl Pack for ProgramConfig {
         let ProgramConfig {
             is_initialized,
             approvals_required_for_config,
+            approval_timeout_for_config,
             config_approvers,
             assistant,
         } = self;
 
         is_initialized_dst[0] = *is_initialized as u8;
         approvals_required_for_config_dst[0] = *approvals_required_for_config;
+        *approval_timeout_for_config_dst = approval_timeout_for_config.to_le_bytes();
         config_approvers_count_dst[0] = config_approvers.len() as u8;
         config_approvers_dst.fill(0);
         config_approvers_dst
@@ -144,6 +153,7 @@ impl Pack for ProgramConfig {
         let (
             is_initialized,
             approvals_required_for_config,
+            approval_timeout_for_config,
             configured_approvers_count,
             config_approvers_bytes,
             assistant,
@@ -151,6 +161,7 @@ impl Pack for ProgramConfig {
             src,
             1,
             1,
+            8,
             1,
             PUBKEY_BYTES * ProgramConfig::MAX_APPROVERS,
             PUBKEY_BYTES
@@ -174,6 +185,7 @@ impl Pack for ProgramConfig {
         Ok(ProgramConfig {
             is_initialized,
             approvals_required_for_config: approvals_required_for_config[0],
+            approval_timeout_for_config: i64::from_le_bytes(*approval_timeout_for_config),
             config_approvers,
             assistant: Pubkey::new_from_array(*assistant),
         })
