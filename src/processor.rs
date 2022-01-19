@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::slice::Iter;
 
 use solana_program::account_info::{next_account_info, AccountInfo};
 use solana_program::entrypoint::ProgramResult;
@@ -146,8 +147,7 @@ impl Processor {
         let program_config_account_info =
             Self::next_program_account_info(accounts_iter, program_id)?;
         let initiator_account_info = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         let program_config = ProgramConfig::unpack(&program_config_account_info.data.borrow())?;
         program_config.validate_initiator(initiator_account_info, &program_config.assistant)?;
@@ -185,8 +185,7 @@ impl Processor {
         let program_config_account_info =
             Self::next_program_account_info(accounts_iter, program_id)?;
         let account_to_return_rent_to = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         if !account_to_return_rent_to.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
@@ -226,8 +225,7 @@ impl Processor {
         let program_config_account_info =
             Self::next_program_account_info(accounts_iter, program_id)?;
         let initiator_account_info = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         let mut multisig_op =
             MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
@@ -265,8 +263,7 @@ impl Processor {
         let wallet_config_account_info =
             Self::next_program_account_info(accounts_iter, program_id)?;
         let rent_collector_account_info = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         if !rent_collector_account_info.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
@@ -314,8 +311,7 @@ impl Processor {
         let program_config_account_info =
             Self::next_program_account_info(accounts_iter, program_id)?;
         let initiator_account_info = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         let wallet_config = WalletConfig::unpack(&wallet_config_account_info.data.borrow())?;
 
@@ -356,8 +352,7 @@ impl Processor {
         let wallet_config_account_info =
             Self::next_program_account_info(accounts_iter, program_id)?;
         let rent_collector_account_info = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         if !rent_collector_account_info.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
@@ -400,8 +395,7 @@ impl Processor {
         let destination_account = next_account_info(accounts_iter)?;
         let program_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
         let initiator_account_info = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         let wallet_config = WalletConfig::unpack(&wallet_config_account_info.data.borrow())?;
 
@@ -451,8 +445,7 @@ impl Processor {
             Self::next_program_account_info(accounts_iter, program_id)?;
         let system_program_account = next_account_info(accounts_iter)?;
         let rent_collector_account_info = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         if !rent_collector_account_info.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
@@ -567,8 +560,7 @@ impl Processor {
         let accounts_iter = &mut accounts.iter();
         let multisig_op_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
         let signer_account_info = next_account_info(accounts_iter)?;
-        let clock_sysvar_info = Self::next_sysvar_account_info(accounts_iter)?;
-        let clock = Clock::from_account_info(&clock_sysvar_info)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         let mut multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
         multisig_op.validate_and_record_approval_disposition(&signer_account_info, disposition, &clock)?;
@@ -601,15 +593,15 @@ impl Processor {
         Ok(account_info)
     }
 
-    fn next_sysvar_account_info<'a, 'b, I: Iterator<Item = &'a AccountInfo<'b>>>(
-        iter: &mut I
-    ) -> Result<I::Item, ProgramError> {
+    fn get_clock_from_next_account(
+        iter: &mut Iter<AccountInfo>
+    ) -> Result<Clock, ProgramError> {
         let account_info = next_account_info(iter)?;
         if !is_sysvar_id(account_info.key) {
-            msg!("Account does not have the correct key");
+            msg!("Account is not a sysvar");
             return Err(ProgramError::InvalidArgument);
         }
-        Ok(account_info)
+        Clock::from_account_info(&account_info)
     }
 
     fn calculate_expires(start: i64, duration: Duration) -> Result<i64, ProgramError> {
