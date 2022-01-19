@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use solana_program::account_info::{next_account_info, AccountInfo};
 use solana_program::entrypoint::ProgramResult;
 use solana_program::msg;
@@ -114,11 +116,7 @@ impl Processor {
             Self::next_program_account_info(accounts_iter, program_id)?;
         let assistant_account_info = next_account_info(accounts_iter)?;
 
-        if config_update.approvals_required_for_config == 0 ||
-            config_update.approval_timeout_for_config == 0 ||
-            config_update.add_approvers.len() == 0 {
-            return Err(WalletError::InvalidConfiguration.into());
-        }
+        ProgramConfig::validate_initial_settings(config_update)?;
 
         let mut program_config =
             ProgramConfig::unpack_unchecked(&program_config_account_info.data.borrow())?;
@@ -161,8 +159,11 @@ impl Processor {
         multisig_op.init(
             program_config.config_approvers,
             program_config.approvals_required_for_config,
-            program_config.approval_timeout_for_config,
-            clock.unix_timestamp + program_config.approval_timeout_for_config,
+            clock.unix_timestamp,
+            Self::calculate_expires(
+                clock.unix_timestamp,
+                program_config.approval_timeout_for_config
+            )?,
             MultisigOpParams::UpdateProgramConfig {
                 program_config_address: *program_config_account_info.key,
                 config_update: config_update.clone(),
@@ -179,7 +180,8 @@ impl Processor {
         config_update: &ProgramConfigUpdate,
     ) -> ProgramResult {
         let accounts_iter = &mut accounts.iter();
-        let multisig_op_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
+        let multisig_op_account_info =
+            Self::next_program_account_info(accounts_iter, program_id)?;
         let program_config_account_info =
             Self::next_program_account_info(accounts_iter, program_id)?;
         let account_to_return_rent_to = next_account_info(accounts_iter)?;
@@ -190,7 +192,8 @@ impl Processor {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
-        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
+        let multisig_op =
+            MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
 
         let expected_params = MultisigOpParams::UpdateProgramConfig {
             program_config_address: *program_config_account_info.key,
@@ -231,17 +234,13 @@ impl Processor {
         let program_config = ProgramConfig::unpack(&program_config_account_info.data.borrow())?;
         program_config.validate_initiator(initiator_account_info, &program_config.assistant)?;
 
-        if config_update.approvals_required_for_transfer == 0 ||
-            config_update.approval_timeout_for_transfer == 0 ||
-            config_update.add_approvers.len() == 0 {
-            return Err(WalletError::InvalidConfiguration.into());
-        }
+        WalletConfig::validate_initial_settings(config_update)?;
 
         multisig_op.init(
             program_config.config_approvers,
             program_config.approvals_required_for_config,
-            program_config.approval_timeout_for_config,
-            clock.unix_timestamp + program_config.approval_timeout_for_config,
+            clock.unix_timestamp,
+            Self::calculate_expires(clock.unix_timestamp, program_config.approval_timeout_for_config)?,
             MultisigOpParams::CreateWallet {
                 wallet_guid_hash,
                 program_config_address: *program_config_account_info.key,
@@ -333,8 +332,8 @@ impl Processor {
         multisig_op.init(
             program_config.config_approvers,
             program_config.approvals_required_for_config,
-            program_config.approval_timeout_for_config,
-            clock.unix_timestamp + program_config.approval_timeout_for_config,
+            clock.unix_timestamp,
+            Self::calculate_expires(clock.unix_timestamp, program_config.approval_timeout_for_config)?,
             MultisigOpParams::UpdateWalletConfig {
                 wallet_guid_hash,
                 wallet_config_address: *wallet_config_account_info.key,
@@ -424,8 +423,8 @@ impl Processor {
         multisig_op.init(
             wallet_config.approvers,
             wallet_config.approvals_required_for_transfer,
-            wallet_config.approval_timeout_for_transfer,
-            clock.unix_timestamp + wallet_config.approval_timeout_for_transfer,
+            clock.unix_timestamp,
+            Self::calculate_expires(clock.unix_timestamp, wallet_config.approval_timeout_for_transfer)?,
             MultisigOpParams::Transfer {
                 wallet_config_address: *wallet_config_account_info.key,
                 source: *source_account.key,
@@ -611,5 +610,13 @@ impl Processor {
             return Err(ProgramError::InvalidArgument);
         }
         Ok(account_info)
+    }
+
+    fn calculate_expires(start: i64, duration: Duration) -> Result<i64, ProgramError> {
+        let expires_at = start.checked_add(duration.as_secs() as i64);
+        if expires_at == None {
+            return Err(ProgramError::InvalidArgument);
+        }
+        Ok(expires_at.unwrap())
     }
 }

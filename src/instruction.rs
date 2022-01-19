@@ -1,6 +1,7 @@
 use std::borrow::Borrow;
 use std::convert::TryInto;
 use std::mem::size_of;
+use std::time::Duration;
 
 use solana_program::instruction::Instruction;
 use solana_program::program_error::ProgramError;
@@ -345,7 +346,7 @@ impl ProgramInstruction {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ProgramConfigUpdate {
     pub approvals_required_for_config: u8,
-    pub approval_timeout_for_config: i64,
+    pub approval_timeout_for_config: Duration,
     pub add_approvers: Vec<Pubkey>,
     pub remove_approvers: Vec<Pubkey>,
 }
@@ -356,7 +357,7 @@ impl ProgramConfigUpdate {
             return Err(ProgramError::InvalidInstructionData);
         }
         let (approvals_config_bytes, rest) = bytes.split_at(1);
-        let approval_timeout = unpack_timeout(rest)?;
+        let approval_timeout = Duration::from_secs(unpack_timeout(rest)?);
         let (_, rest) = rest.split_at(8);
 
         let add_approvers = unpack_approvers(rest)?;
@@ -379,7 +380,7 @@ impl ProgramConfigUpdate {
 
         dst.resize(dst.len() + len, 0);
         dst[0] = self.approvals_required_for_config;
-        dst[1..9].copy_from_slice(&self.approval_timeout_for_config.to_le_bytes());
+        dst[1..9].copy_from_slice(&self.approval_timeout_for_config.as_secs().to_le_bytes());
 
         dst[add_approvers_offset] = self.add_approvers.len() as u8;
         dst[add_approvers_offset + 1..remove_approvers_offset]
@@ -399,7 +400,7 @@ impl ProgramConfigUpdate {
 pub struct WalletConfigUpdate {
     pub name_hash: [u8; 32],
     pub approvals_required_for_transfer: u8,
-    pub approval_timeout_for_transfer: i64,
+    pub approval_timeout_for_transfer: Duration,
     pub add_approvers: Vec<Pubkey>,
     pub remove_approvers: Vec<Pubkey>,
     pub add_allowed_destinations: Vec<AllowedDestination>,
@@ -413,7 +414,7 @@ impl WalletConfigUpdate {
         }
         let (name_hash_bytes, rest) = bytes.split_at(32);
         let (approvals_config_bytes, rest) = rest.split_at(1);
-        let approval_timeout = unpack_timeout(rest)?;
+        let approval_timeout = Duration::from_secs(unpack_timeout(rest)?);
         let (_, rest) = rest.split_at(8);
 
         let add_approvers = unpack_approvers(rest)?;
@@ -473,7 +474,7 @@ impl WalletConfigUpdate {
         dst.resize(dst.len() + len, 0);
         dst[0..approvals_required_for_transfer_offset].copy_from_slice(&self.name_hash);
         dst[approvals_required_for_transfer_offset] = self.approvals_required_for_transfer;
-        dst[approval_timeout_offset..add_approvers_offset].copy_from_slice(&self.approval_timeout_for_transfer.to_le_bytes());
+        dst[approval_timeout_offset..add_approvers_offset].copy_from_slice(&self.approval_timeout_for_transfer.as_secs().to_le_bytes());
 
         dst[add_approvers_offset] = self.add_approvers.len() as u8;
         dst[add_approvers_offset + 1..remove_approvers_offset]
@@ -521,10 +522,10 @@ fn unpack_wallet_guid_hash(bytes: &[u8]) -> Result<[u8; 32], ProgramError> {
         .ok_or(ProgramError::InvalidInstructionData)
 }
 
-fn unpack_timeout(bytes: &[u8]) -> Result<i64, ProgramError> {
+fn unpack_timeout(bytes: &[u8]) -> Result<u64, ProgramError> {
     bytes.get(..8)
         .and_then(|slice| slice.try_into().ok())
-        .map(i64::from_le_bytes)
+        .map(u64::from_le_bytes)
         .ok_or(ProgramError::InvalidInstructionData)
 }
 
@@ -534,7 +535,7 @@ pub fn program_init(
     assistant_account: &Pubkey,
     config_approvers: Vec<Pubkey>,
     approvals_required_for_config: u8,
-    approval_timeout_for_config: i64,
+    approval_timeout_for_config: Duration,
 ) -> Instruction {
     let config_update = ProgramConfigUpdate {
         approvals_required_for_config,
@@ -588,7 +589,7 @@ pub fn program_init_config_update(
     multisig_op_account: &Pubkey,
     assistant_account: &Pubkey,
     approvals_required_for_config: u8,
-    approval_timeout_for_config: i64,
+    approval_timeout_for_config: Duration,
     add_approvers: Vec<Pubkey>,
     remove_approvers: Vec<Pubkey>,
 ) -> Instruction {
@@ -670,7 +671,7 @@ pub fn init_wallet_creation(
     wallet_guid_hash: [u8; 32],
     name_hash: [u8; 32],
     approvals_required_for_transfer: u8,
-    approval_timeout_for_transfer: i64,
+    approval_timeout_for_transfer: Duration,
     approvers: Vec<Pubkey>,
     allowed_destinations: Vec<AllowedDestination>,
 ) -> Instruction {
@@ -739,7 +740,7 @@ pub fn init_wallet_config_update(
     wallet_guid_hash: [u8; 32],
     name_hash: [u8; 32],
     approvals_required_for_transfer: u8,
-    approval_timeout_for_transfer: i64,
+    approval_timeout_for_transfer: Duration,
     add_approvers: Vec<Pubkey>,
     remove_approvers: Vec<Pubkey>,
     add_allowed_destinations: Vec<AllowedDestination>,

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::error::WalletError;
 use crate::instruction::ProgramConfigUpdate;
 use crate::model::wallet_config::len_after_update;
@@ -13,7 +15,7 @@ use solana_program::pubkey::{Pubkey, PUBKEY_BYTES};
 pub struct ProgramConfig {
     pub is_initialized: bool,
     pub approvals_required_for_config: u8,
-    pub approval_timeout_for_config: i64,
+    pub approval_timeout_for_config: Duration,
     pub config_approvers: Vec<Pubkey>,
     pub assistant: Pubkey,
 }
@@ -53,6 +55,15 @@ impl ProgramConfig {
         return validate_initiator(initiator, assistant_key, &self.config_approvers);
     }
 
+    pub fn validate_initial_settings(config_update: &ProgramConfigUpdate) -> ProgramResult {
+        if config_update.approvals_required_for_config == 0 ||
+            config_update.approval_timeout_for_config.as_secs() == 0 ||
+            config_update.add_approvers.len() == 0 {
+            return Err(ProgramError::InvalidArgument);
+        }
+        Ok(())
+    }
+
     pub fn validate_update(&self, config_update: &ProgramConfigUpdate) -> ProgramResult {
         let approvers_after_update = len_after_update(
             &self.config_approvers,
@@ -83,7 +94,7 @@ impl ProgramConfig {
     pub fn update(&mut self, config_update: &ProgramConfigUpdate) -> ProgramResult {
         self.validate_update(config_update)?;
         self.approvals_required_for_config = config_update.approvals_required_for_config;
-        if config_update.approval_timeout_for_config > 0 {
+        if config_update.approval_timeout_for_config.as_secs() > 0 {
             self.approval_timeout_for_config = config_update.approval_timeout_for_config;
         }
 
@@ -137,7 +148,7 @@ impl Pack for ProgramConfig {
 
         is_initialized_dst[0] = *is_initialized as u8;
         approvals_required_for_config_dst[0] = *approvals_required_for_config;
-        *approval_timeout_for_config_dst = approval_timeout_for_config.to_le_bytes();
+        *approval_timeout_for_config_dst = approval_timeout_for_config.as_secs().to_le_bytes();
         config_approvers_count_dst[0] = config_approvers.len() as u8;
         config_approvers_dst.fill(0);
         config_approvers_dst
@@ -185,7 +196,7 @@ impl Pack for ProgramConfig {
         Ok(ProgramConfig {
             is_initialized,
             approvals_required_for_config: approvals_required_for_config[0],
-            approval_timeout_for_config: i64::from_le_bytes(*approval_timeout_for_config),
+            approval_timeout_for_config: Duration::from_secs(u64::from_le_bytes(*approval_timeout_for_config)),
             config_approvers,
             assistant: Pubkey::new_from_array(*assistant),
         })

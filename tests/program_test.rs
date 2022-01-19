@@ -1,6 +1,6 @@
 #![cfg(feature = "test-bpf")]
 use std::borrow::BorrowMut;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use solana_program::instruction::InstructionError::{
     Custom, InvalidArgument, MissingRequiredSignature,
@@ -41,7 +41,7 @@ mod utils;
 async fn init_program_test(
     approvals_required_for_config: Option<u8>,
     config_approvers: Option<Vec<Pubkey>>,
-    approval_timeout_for_config: Option<i64>,
+    approval_timeout_for_config: Option<Duration>,
 ) {
     let program_owner = Keypair::new();
     let mut pt = ProgramTest::new(
@@ -97,7 +97,7 @@ async fn init_program_with_approvers() {
             Pubkey::new_unique(),
             Pubkey::new_unique(),
         ]),
-        Some(3600)
+        Some(Duration::from_secs(3600))
     )
     .await;
 }
@@ -133,8 +133,8 @@ async fn config_update() {
         ]
     );
     assert_eq!(multisig_op.dispositions_required, 1);
-    assert_eq!(multisig_op.approval_timeout, 3600);
     assert_eq!(multisig_op.operation_disposition, OperationDisposition::NONE);
+    assert_eq!(multisig_op.started_at, start);
     assert_eq!(multisig_op.expires_at, start + 3600);
 
     assert_eq!(
@@ -212,7 +212,7 @@ async fn config_update() {
     )
     .unwrap();
     assert_eq!(config.approvals_required_for_config, 2);
-    assert_eq!(config.approval_timeout_for_config, 7200);
+    assert_eq!(config.approval_timeout_for_config, Duration::from_secs(7200));
     assert_eq!(
         config.config_approvers,
         vec!(context.approvers[1].pubkey(), context.approvers[2].pubkey())
@@ -264,6 +264,7 @@ async fn config_update_is_denied() {
             .data(),
     ).unwrap();
     assert_eq!(multisig_op.operation_disposition, OperationDisposition::DENIED);
+    assert_eq!(multisig_op.started_at, start);
     assert_eq!(multisig_op.expires_at, start + 3600);
 
     // finalize the multisig op
@@ -307,7 +308,7 @@ async fn config_update_is_denied() {
     )
         .unwrap();
     assert_eq!(config.approvals_required_for_config, 1);
-    assert_eq!(config.approval_timeout_for_config, 3600);
+    assert_eq!(config.approval_timeout_for_config, Duration::from_secs(3600));
     assert_eq!(
         config.config_approvers,
         vec!(context.approvers[0].pubkey(), context.approvers[1].pubkey())
@@ -485,7 +486,7 @@ async fn test_wallet_creation() {
         context.program_config_account.pubkey()
     );
     assert_eq!(wallet_config.approvals_required_for_transfer, 2);
-    assert_eq!(wallet_config.approval_timeout_for_transfer, 1800);
+    assert_eq!(wallet_config.approval_timeout_for_transfer, Duration::from_secs(1800));
 
     // verify the multisig op account is closed
     assert!(context
@@ -513,9 +514,9 @@ async fn test_wallet_creation_fails_if_time_out_not_set() {
     assert_eq!(
         utils::setup_init_wallet_failure_tests(None,
                                                2,
-                                               0,
+                                               Duration::from_secs(0),
                                                vec![Pubkey::new_unique()]).await,
-        TransactionError::InstructionError(1, Custom(WalletError::InvalidConfiguration as u32))
+        TransactionError::InstructionError(1, InvalidArgument)
     )
 }
 
@@ -524,9 +525,9 @@ async fn test_wallet_creation_fails_if_no_approvers() {
     assert_eq!(
         utils::setup_init_wallet_failure_tests(None,
                                                1,
-                                               18000,
+                                               Duration::from_secs(18000),
                                                vec![]).await,
-        TransactionError::InstructionError(1, Custom(WalletError::InvalidConfiguration as u32))
+        TransactionError::InstructionError(1, InvalidArgument)
     )
 }
 
@@ -535,9 +536,9 @@ async fn test_wallet_creation_fails_if_num_approvals_required_not_set() {
     assert_eq!(
         utils::setup_init_wallet_failure_tests(None,
                                                0,
-                                               18000,
+                                               Duration::from_secs(18000),
                                                vec![Pubkey::new_unique()]).await,
-        TransactionError::InstructionError(1, Custom(WalletError::InvalidConfiguration as u32))
+        TransactionError::InstructionError(1, InvalidArgument)
     )
 }
 
@@ -711,7 +712,7 @@ async fn test_wallet_config_update() {
                 context.wallet_guid_hash,
                 wallet_name_hash,
                 1,
-                7200,
+                Duration::from_secs(7200),
                 vec![context.approvers[0].pubkey()],
                 vec![context.approvers[1].pubkey()],
                 vec![new_allowed_destination],
@@ -747,7 +748,7 @@ async fn test_wallet_config_update() {
     let expected_config_update = WalletConfigUpdate {
         name_hash: wallet_name_hash,
         approvals_required_for_transfer: 1,
-        approval_timeout_for_transfer: 7200,
+        approval_timeout_for_transfer: Duration::from_secs(7200),
         add_approvers: vec![context.approvers[0].pubkey()],
         remove_approvers: vec![context.approvers[1].pubkey()],
         add_allowed_destinations: vec![new_allowed_destination],
@@ -802,7 +803,7 @@ async fn test_wallet_config_update() {
         context.wallet_guid_hash.as_slice()
     );
     assert_eq!(wallet_config.approvals_required_for_transfer, 1);
-    assert_eq!(wallet_config.approval_timeout_for_transfer, 7200);
+    assert_eq!(wallet_config.approval_timeout_for_transfer, Duration::from_secs(7200));
     assert_eq!(wallet_config.wallet_name_hash, wallet_name_hash.as_slice());
     assert_eq!(
         wallet_config.approvers,
@@ -883,7 +884,7 @@ async fn test_wallet_config_update_is_denied() {
                 context.wallet_guid_hash,
                 wallet_name_hash,
                 1,
-                7200,
+                Duration::from_secs(7200),
                 vec![context.approvers[0].pubkey()],
                 vec![context.approvers[1].pubkey()],
                 vec![new_allowed_destination],
@@ -918,7 +919,7 @@ async fn test_wallet_config_update_is_denied() {
     let expected_config_update = WalletConfigUpdate {
         name_hash: wallet_name_hash,
         approvals_required_for_transfer: 1,
-        approval_timeout_for_transfer: 7200,
+        approval_timeout_for_transfer: Duration::from_secs(7200),
         add_approvers: vec![context.approvers[0].pubkey()],
         remove_approvers: vec![context.approvers[1].pubkey()],
         add_allowed_destinations: vec![new_allowed_destination],
@@ -973,7 +974,7 @@ async fn test_wallet_config_update_is_denied() {
         context.wallet_guid_hash.as_slice()
     );
     assert_eq!(wallet_config.approvals_required_for_transfer, 2);
-    assert_eq!(wallet_config.approval_timeout_for_transfer, 1800);
+    assert_eq!(wallet_config.approval_timeout_for_transfer, Duration::from_secs(1800));
     assert_eq!(wallet_config.wallet_name_hash, context.wallet_name_hash.as_slice());
     assert_eq!(
         wallet_config.approvers,
@@ -1052,7 +1053,7 @@ async fn test_wallet_config_update_wrong_program_config_account() {
                 context.wallet_guid_hash,
                 context.wallet_name_hash,
                 2,
-                7200,
+                Duration::from_secs(7200),
                 vec![],
                 vec![],
                 vec![],
@@ -1104,7 +1105,7 @@ async fn test_wallet_config_update_too_many_approvers() {
                 context.wallet_guid_hash,
                 context.wallet_name_hash,
                 2,
-                7200,
+                Duration::from_secs(7200),
                 (1..ProgramConfig::MAX_APPROVERS)
                     .map(|_| Pubkey::new_unique())
                     .collect(),
@@ -1213,7 +1214,7 @@ async fn test_wallet_config_update_too_many_required_approvers() {
                 context.wallet_guid_hash,
                 context.wallet_name_hash,
                 3,
-                10800,
+                Duration::from_secs(10800),
                 vec![],
                 vec![],
                 vec![],
@@ -1592,7 +1593,7 @@ async fn test_transfer_unwhitelisted_address() {
                 context.wallet_guid_hash,
                 context.wallet_name_hash,
                 2,
-                7200,
+                Duration::from_secs(7200),
                 vec![],
                 vec![],
                 vec![],
@@ -1628,7 +1629,7 @@ async fn test_transfer_unwhitelisted_address() {
     let expected_config_update = WalletConfigUpdate {
         name_hash: context.wallet_name_hash,
         approvals_required_for_transfer: 2,
-        approval_timeout_for_transfer: 7200,
+        approval_timeout_for_transfer: Duration::from_secs(7200),
         add_approvers: vec![],
         remove_approvers: vec![],
         add_allowed_destinations: vec![],

@@ -48,7 +48,6 @@ pub enum OperationDisposition {
 impl OperationDisposition {
     pub fn from_u8(value: u8) -> OperationDisposition {
         match value {
-            0 => OperationDisposition::NONE,
             1 => OperationDisposition::APPROVED,
             2 => OperationDisposition::DENIED,
             3 => OperationDisposition::EXPIRED,
@@ -100,7 +99,7 @@ pub struct MultisigOp {
     pub disposition_records: Vec<ApprovalDispositionRecord>,
     pub dispositions_required: u8,
     pub params_hash: Hash,
-    pub approval_timeout: i64,
+    pub started_at: i64,
     pub expires_at: i64,
     pub operation_disposition: OperationDisposition
 }
@@ -117,7 +116,7 @@ impl MultisigOp {
         &mut self,
         approvers: Vec<Pubkey>,
         approvals_required: u8,
-        approval_timeout: i64,
+        started_at: i64,
         expires_at: i64,
         params: MultisigOpParams,
     ) -> ProgramResult {
@@ -131,7 +130,7 @@ impl MultisigOp {
         self.dispositions_required = approvals_required;
         self.params_hash = params.hash();
         self.is_initialized = true;
-        self.approval_timeout = approval_timeout;
+        self.started_at = started_at;
         self.expires_at = expires_at;
         self.operation_disposition = OperationDisposition::NONE;
 
@@ -225,7 +224,7 @@ impl Pack for MultisigOp {
             disposition_records_dst,
             dispositions_required_for_transfer_dst,
             hash_dst,
-            approval_timeout_dst,
+            started_at_dst,
             expires_at_dst,
             operation_disposition_dst
         ) = mut_array_refs![
@@ -245,14 +244,14 @@ impl Pack for MultisigOp {
             disposition_records,
             dispositions_required: dispositions_required_for_transfer,
             params_hash: hash,
-            approval_timeout,
+            started_at,
             expires_at,
             operation_disposition
         } = self;
 
         is_initialized_dst[0] = *is_initialized as u8;
         dispositions_required_for_transfer_dst[0] = *dispositions_required_for_transfer;
-        *approval_timeout_dst = approval_timeout.to_le_bytes();
+        *started_at_dst = started_at.to_le_bytes();
         *expires_at_dst = expires_at.to_le_bytes();
         operation_disposition_dst[0] = operation_disposition.to_u8();
 
@@ -274,7 +273,7 @@ impl Pack for MultisigOp {
             disposition_record_bytes,
             dispositions_required_for_transfer,
             hash,
-            approval_timeout,
+            started_at,
             expires_at,
             operation_disposition
         ) = array_refs![
@@ -309,7 +308,7 @@ impl Pack for MultisigOp {
             disposition_records,
             dispositions_required: dispositions_required_for_transfer[0],
             params_hash: Hash::new_from_array(*hash),
-            approval_timeout: i64::from_le_bytes(*approval_timeout),
+            started_at: i64::from_le_bytes(*started_at),
             expires_at: i64::from_le_bytes(*expires_at),
             operation_disposition: OperationDisposition::from_u8(operation_disposition[0])
         })
