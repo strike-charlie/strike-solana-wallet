@@ -464,12 +464,12 @@ impl WalletConfigUpdate {
             add_approvers_offset + 1 + self.add_approvers.len() * PUBKEY_BYTES;
         let add_allowed_destinations_offset =
             remove_approvers_offset + 1 + self.remove_approvers.len() * PUBKEY_BYTES;
-        let remove_allowed_destinations_offset = add_allowed_destinations_offset
-            + 1
-            + self.add_allowed_destinations.len() * AllowedDestination::LEN;
-        let len = remove_allowed_destinations_offset
-            + 1
-            + self.remove_allowed_destinations.len() * AllowedDestination::LEN;
+        let remove_allowed_destinations_offset = add_allowed_destinations_offset.
+            checked_add(1).unwrap().
+            checked_add(self.add_allowed_destinations.len() * AllowedDestination::LEN).unwrap();
+        let len = remove_allowed_destinations_offset.
+            checked_add(1).unwrap().
+            checked_add(self.remove_allowed_destinations.len() * AllowedDestination::LEN).unwrap();
 
         dst.resize(dst.len() + len, 0);
         dst[0..approvals_required_for_transfer_offset].copy_from_slice(&self.name_hash);
