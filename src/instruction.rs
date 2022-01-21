@@ -4,6 +4,7 @@ use std::mem::size_of;
 use std::time::Duration;
 
 use solana_program::instruction::Instruction;
+use solana_program::hash::Hash;
 use solana_program::program_error::ProgramError;
 use solana_program::system_program;
 use solana_program::{
@@ -87,7 +88,10 @@ pub enum ProgramInstruction {
     /// 1. `[signer]` The approver account
     /// 2. `[signer]` The fee payer account
     /// 3. `[]` The sysvar clock account
-    SetApprovalDisposition { disposition: ApprovalDisposition },
+    SetApprovalDisposition {
+        disposition: ApprovalDisposition,
+        params_hash: Hash,
+    },
 
     /// 0  `[writable]` The multisig operation account
     /// 1. `[writable]` The source account
@@ -125,9 +129,10 @@ impl ProgramInstruction {
                 buf.push(2);
                 buf.extend_from_slice(&config_update_bytes);
             }
-            &ProgramInstruction::SetApprovalDisposition { ref disposition } => {
+            &ProgramInstruction::SetApprovalDisposition { ref disposition, ref params_hash } => {
                 buf.push(9);
                 buf.push(disposition.to_u8());
+                buf.extend_from_slice(params_hash.as_ref());
             }
             &ProgramInstruction::InitWalletCreation {
                 ref wallet_guid_hash,
@@ -316,11 +321,15 @@ impl ProgramInstruction {
     fn unpack_set_approval_disposition_instruction(
         bytes: &[u8],
     ) -> Result<ProgramInstruction, ProgramError> {
-        let (disposition, _) = bytes
+        let (disposition, rest) = bytes
             .split_first()
             .ok_or(ProgramError::InvalidInstructionData)?;
         Ok(Self::SetApprovalDisposition {
             disposition: ApprovalDisposition::from_u8(*disposition),
+            params_hash: Hash::new_from_array(rest
+                .get(0..32)
+                .and_then(|slice| slice.try_into().ok())
+                .ok_or(ProgramError::InvalidInstructionData)?)
         })
     }
 
@@ -617,10 +626,12 @@ pub fn set_approval_disposition(
     program_id: &Pubkey,
     multisig_op_account: &Pubkey,
     approver: &Pubkey,
-    disposition: ApprovalDisposition
+    disposition: ApprovalDisposition,
+    params_hash: Hash
 ) -> Instruction {
     let data = ProgramInstruction::SetApprovalDisposition {
         disposition: disposition,
+        params_hash
     }
     .borrow()
     .pack();

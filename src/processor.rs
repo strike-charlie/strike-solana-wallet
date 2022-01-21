@@ -3,6 +3,7 @@ use std::slice::Iter;
 
 use solana_program::account_info::{next_account_info, AccountInfo};
 use solana_program::entrypoint::ProgramResult;
+use solana_program::hash::Hash;
 use solana_program::msg;
 use solana_program::program::invoke_signed;
 use solana_program::program_error::ProgramError;
@@ -101,8 +102,8 @@ impl Processor {
                 Self::handle_finalize_transfer(program_id, &accounts, amount, token_mint)
             }
 
-            ProgramInstruction::SetApprovalDisposition { disposition } => {
-                Self::handle_approval_disposition(program_id, &accounts, disposition)
+            ProgramInstruction::SetApprovalDisposition { disposition, params_hash } => {
+                Self::handle_approval_disposition(program_id, &accounts, disposition, params_hash)
             }
         }
     }
@@ -556,6 +557,7 @@ impl Processor {
         program_id: &Pubkey,
         accounts: &[AccountInfo],
         disposition: ApprovalDisposition,
+        params_hash: Hash,
     ) -> ProgramResult {
         let accounts_iter = &mut accounts.iter();
         let multisig_op_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
@@ -563,6 +565,11 @@ impl Processor {
         let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
         let mut multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
+
+        if params_hash != multisig_op.params_hash {
+            return Err(WalletError::InvalidSignature.into());
+        }
+
         multisig_op.validate_and_record_approval_disposition(&signer_account_info, disposition, &clock)?;
         MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
 
