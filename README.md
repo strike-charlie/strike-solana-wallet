@@ -37,19 +37,22 @@ $ make build
 
 # Testing
 
-## **1. Install the [solana CLI tools](https://docs.solana.com/cli/install-solana-cli-tools)**
-
-## **2. Start the local test validator**
-
-```bash
-$ solana-test-validator
-```
-
-## **3. In a new terminal, run the test suite**
+## **1. In a terminal, run the unit test suite**
 
 ```bash
 $ make test
 ```
+
+# Vulnerability Analysis
+
+## **1. Install [Soteria](https://www.soteria.dev/post/soteria-a-vulnerability-scanner-for-solana-smart-contracts)**
+
+## **2. In a terminal, run the analyze target**
+
+```bash
+$ make analyze
+```
+
 
 # Getting Help
 
