@@ -2,6 +2,7 @@
 use std::borrow::BorrowMut;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use solana_program::hash::Hash;
 use solana_program::instruction::InstructionError::{
     Custom, InvalidArgument, MissingRequiredSignature,
 };
@@ -1537,7 +1538,7 @@ async fn test_approval_fails_if_incorrect_params_hash() {
                     &multisig_op_account.pubkey(),
                     &context.approvers[1].pubkey(),
                     ApprovalDisposition::APPROVE,
-                    context.params_hash
+                    Hash::new_from_array([0;32])
                 )],
                 Some(&context.payer.pubkey()),
                 &[&context.payer, &context.approvers[1]],
