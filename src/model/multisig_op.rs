@@ -71,6 +71,28 @@ pub struct ApprovalDispositionRecord {
     pub disposition: ApprovalDisposition,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum WrapDirection {
+    WRAP = 0,
+    UNWRAP = 1,
+}
+
+impl WrapDirection {
+    pub fn from_u8(value: u8) -> WrapDirection {
+        match value {
+            0 => WrapDirection::WRAP,
+            _ => WrapDirection::UNWRAP,
+        }
+    }
+
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            WrapDirection::WRAP => 0,
+            WrapDirection::UNWRAP => 1,
+        }
+    }
+}
+
 impl ApprovalDispositionRecord {
     pub(crate) const LEN: usize = 1 + PUBKEY_BYTES;
 
@@ -352,6 +374,12 @@ pub enum MultisigOpParams {
         amount: u64,
         token_mint: Pubkey,
     },
+    Wrap {
+        program_config_address: Pubkey,
+        wallet_guid_hash: [u8; 32],
+        amount: u64,
+        direction: WrapDirection,
+    },
 }
 
 impl MultisigOpParams {
@@ -436,6 +464,29 @@ impl MultisigOpParams {
                 destination_ref.copy_from_slice(destination.as_ref());
                 *amount_ref = amount.to_le_bytes();
                 token_mint_ref.copy_from_slice(token_mint.as_ref());
+                hash(&bytes)
+            }
+            MultisigOpParams::Wrap {
+                program_config_address,
+                wallet_guid_hash,
+                amount,
+                direction,
+            } => {
+                const LEN: usize = 1 + PUBKEY_BYTES + 32 + 8 + 1;
+                let mut bytes: [u8; LEN] = [0; LEN];
+                let bytes_ref = array_mut_ref![bytes, 0, LEN];
+                let (
+                    type_code_ref,
+                    program_config_address_ref,
+                    wallet_guid_hash_ref,
+                    amount_ref,
+                    direction_ref,
+                ) = mut_array_refs![bytes_ref, 1, PUBKEY_BYTES, 32, 8, 1];
+                type_code_ref[0] = 4;
+                program_config_address_ref.copy_from_slice(program_config_address.as_ref());
+                wallet_guid_hash_ref.copy_from_slice(wallet_guid_hash.as_ref());
+                *amount_ref = amount.to_le_bytes();
+                *direction_ref = direction.to_u8().to_le_bytes();
                 hash(&bytes)
             }
         }

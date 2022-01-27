@@ -11,12 +11,13 @@ use std::borrow::BorrowMut;
 use std::collections::HashSet;
 use std::time::Duration;
 use strike_wallet::instruction::{
-    finalize_wallet_creation, init_transfer, init_wallet_creation, program_init_config_update,
-    set_approval_disposition, ProgramConfigUpdate, WalletConfigUpdate,
+    finalize_wallet_creation, finalize_wrap_unwrap, init_transfer, init_wallet_creation,
+    init_wrap_unwrap, program_init_config_update, set_approval_disposition, ProgramConfigUpdate,
+    WalletConfigUpdate,
 };
 use strike_wallet::model::multisig_op::{
     ApprovalDisposition, ApprovalDispositionRecord, MultisigOp, MultisigOpParams,
-    OperationDisposition,
+    OperationDisposition, WrapDirection,
 };
 use strike_wallet::model::program_config::{AddressBook, Approvers, Signers};
 use strike_wallet::model::signer::Signer;
@@ -940,4 +941,169 @@ pub async fn verify_multisig_op_init_fails(
             .unwrap(),
         TransactionError::InstructionError(1, expected_error),
     );
+}
+
+pub async fn process_wrap(
+    context: &mut WalletTestContext,
+    multisig_account_rent: u64,
+    balance_account: Pubkey,
+    amount: u64,
+    token_account_rent: u64,
+    wrapped_sol_account: Pubkey,
+) -> transport::Result<()> {
+    let multisig_op_account = Keypair::new();
+
+    let init_result = context
+        .banks_client
+        .process_transaction(Transaction::new_signed_with_payer(
+            &[
+                system_instruction::create_account(
+                    &context.payer.pubkey(),
+                    &multisig_op_account.pubkey(),
+                    multisig_account_rent,
+                    MultisigOp::LEN as u64,
+                    &context.program_owner.pubkey(),
+                ),
+                init_wrap_unwrap(
+                    &context.program_owner.pubkey(),
+                    &context.program_config_account.pubkey(),
+                    &multisig_op_account.pubkey(),
+                    &context.assistant_account.pubkey(),
+                    &balance_account,
+                    context.wallet_guid_hash,
+                    amount,
+                    WrapDirection::WRAP,
+                ),
+            ],
+            Some(&context.payer.pubkey()),
+            &[
+                &context.payer,
+                &multisig_op_account,
+                &context.assistant_account,
+            ],
+            context.recent_blockhash,
+        ))
+        .await;
+
+    if let Err(_) = init_result {
+        return init_result;
+    }
+
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(wrapped_sol_account)
+            .await
+            .unwrap(),
+        token_account_rent
+    );
+
+    assert_eq!(
+        get_token_balance(context.borrow_mut(), &wrapped_sol_account).await,
+        0
+    );
+
+    approve_or_deny_n_of_n_multisig_op(
+        context.banks_client.borrow_mut(),
+        &context.program_owner.pubkey(),
+        &multisig_op_account.pubkey(),
+        vec![&context.approvers[0], &context.approvers[1]],
+        &context.payer,
+        context.recent_blockhash,
+        ApprovalDisposition::APPROVE,
+        OperationDisposition::APPROVED,
+    )
+    .await;
+
+    context
+        .banks_client
+        .process_transaction(Transaction::new_signed_with_payer(
+            &[finalize_wrap_unwrap(
+                &context.program_owner.pubkey(),
+                &multisig_op_account.pubkey(),
+                &context.program_config_account.pubkey(),
+                &balance_account,
+                &context.payer.pubkey(),
+                context.wallet_guid_hash,
+                amount,
+                WrapDirection::WRAP,
+            )],
+            Some(&context.payer.pubkey()),
+            &[&context.payer],
+            context.recent_blockhash,
+        ))
+        .await
+}
+
+pub async fn process_unwrapping(
+    context: &mut WalletTestContext,
+    multisig_account_rent: u64,
+    balance_account: Pubkey,
+    unwrap_amount: u64,
+) -> transport::Result<()> {
+    let unwrap_multisig_op_account = Keypair::new();
+
+    context
+        .banks_client
+        .process_transaction(Transaction::new_signed_with_payer(
+            &[
+                system_instruction::create_account(
+                    &context.payer.pubkey(),
+                    &unwrap_multisig_op_account.pubkey(),
+                    multisig_account_rent,
+                    MultisigOp::LEN as u64,
+                    &context.program_owner.pubkey(),
+                ),
+                init_wrap_unwrap(
+                    &context.program_owner.pubkey(),
+                    &context.program_config_account.pubkey(),
+                    &unwrap_multisig_op_account.pubkey(),
+                    &context.assistant_account.pubkey(),
+                    &balance_account,
+                    context.wallet_guid_hash,
+                    unwrap_amount,
+                    WrapDirection::UNWRAP,
+                ),
+            ],
+            Some(&context.payer.pubkey()),
+            &[
+                &context.payer,
+                &unwrap_multisig_op_account,
+                &context.assistant_account,
+            ],
+            context.recent_blockhash,
+        ))
+        .await
+        .unwrap();
+
+    approve_or_deny_n_of_n_multisig_op(
+        context.banks_client.borrow_mut(),
+        &context.program_owner.pubkey(),
+        &unwrap_multisig_op_account.pubkey(),
+        vec![&context.approvers[0], &context.approvers[1]],
+        &context.payer,
+        context.recent_blockhash,
+        ApprovalDisposition::APPROVE,
+        OperationDisposition::APPROVED,
+    )
+    .await;
+
+    context
+        .banks_client
+        .process_transaction(Transaction::new_signed_with_payer(
+            &[finalize_wrap_unwrap(
+                &context.program_owner.pubkey(),
+                &unwrap_multisig_op_account.pubkey(),
+                &context.program_config_account.pubkey(),
+                &balance_account,
+                &context.payer.pubkey(),
+                context.wallet_guid_hash,
+                unwrap_amount,
+                WrapDirection::UNWRAP,
+            )],
+            Some(&context.payer.pubkey()),
+            &[&context.payer],
+            context.recent_blockhash,
+        ))
+        .await
 }

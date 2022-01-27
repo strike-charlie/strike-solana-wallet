@@ -1941,6 +1941,175 @@ async fn test_transfer_unwhitelisted_address() {
 }
 
 #[tokio::test]
+async fn test_wrap_unwrap() {
+    let (mut context, balance_account) = utils::setup_wallet_tests_and_finalize(Some(60000)).await;
+    let rent = context.banks_client.get_rent().await.unwrap();
+    let token_account_rent = rent.minimum_balance(spl_token::state::Account::LEN);
+    let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
+    let wrapped_sol_account = spl_associated_token_account::get_associated_token_address(
+        &balance_account,
+        &spl_token::native_mint::id(),
+    );
+
+    let amount = 123;
+
+    assert_eq!(
+        utils::process_wrap(
+            &mut context,
+            multisig_account_rent,
+            balance_account,
+            amount,
+            token_account_rent,
+            wrapped_sol_account,
+        )
+        .await
+        .unwrap_err()
+        .unwrap(),
+        TransactionError::InstructionError(1, Custom(1)),
+    );
+
+    // move enough into balance account to fund wrapped sol token rent, but NOT what we want to transfer
+    context
+        .banks_client
+        .process_transaction(Transaction::new_signed_with_payer(
+            &[system_instruction::transfer(
+                &context.payer.pubkey(),
+                &balance_account,
+                token_account_rent,
+            )],
+            Some(&context.payer.pubkey()),
+            &[&context.payer],
+            context.recent_blockhash,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        utils::process_wrap(
+            &mut context,
+            multisig_account_rent,
+            balance_account,
+            amount,
+            token_account_rent,
+            wrapped_sol_account,
+        )
+        .await
+        .unwrap_err()
+        .unwrap(),
+        TransactionError::InstructionError(0, Custom(WalletError::InsufficientBalance as u32)),
+    );
+
+    // balance account should have 0 SOL now
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(balance_account)
+            .await
+            .unwrap(),
+        0
+    );
+
+    // move enough into balance account to fund the amount
+    context
+        .banks_client
+        .process_transaction(Transaction::new_signed_with_payer(
+            &[system_instruction::transfer(
+                &context.payer.pubkey(),
+                &balance_account,
+                amount,
+            )],
+            Some(&context.payer.pubkey()),
+            &[&context.payer],
+            context.recent_blockhash,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(balance_account)
+            .await
+            .unwrap(),
+        amount
+    );
+
+    utils::process_wrap(
+        &mut context,
+        multisig_account_rent,
+        balance_account,
+        amount,
+        token_account_rent,
+        wrapped_sol_account,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(wrapped_sol_account)
+            .await
+            .unwrap(),
+        token_account_rent + amount
+    );
+
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(balance_account)
+            .await
+            .unwrap(),
+        0
+    );
+
+    let result = utils::process_unwrapping(
+        &mut context,
+        multisig_account_rent,
+        balance_account,
+        amount * 2,
+    )
+    .await;
+    assert_eq!(
+        result.unwrap_err().unwrap(),
+        TransactionError::InstructionError(0, Custom(WalletError::InsufficientBalance as u32)),
+    );
+
+    let unwrap_amount = 64;
+    utils::process_unwrapping(
+        &mut context,
+        multisig_account_rent,
+        balance_account,
+        unwrap_amount,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(wrapped_sol_account)
+            .await
+            .unwrap(),
+        token_account_rent + amount - unwrap_amount
+    );
+
+    assert_eq!(
+        utils::get_token_balance(&mut context, &wrapped_sol_account).await,
+        amount - unwrap_amount
+    );
+
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(balance_account)
+            .await
+            .unwrap(),
+        unwrap_amount
+    );
+}
+
+#[tokio::test]
 async fn test_transfer_spl_happy() {
     test_transfer_spl(false, true).await
 }

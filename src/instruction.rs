@@ -11,7 +11,7 @@ use solana_program::{
     instruction::AccountMeta, instruction::Instruction, pubkey::Pubkey, system_program, sysvar,
 };
 
-use crate::model::multisig_op::ApprovalDisposition;
+use crate::model::multisig_op::{ApprovalDisposition, WrapDirection};
 use crate::model::signer::Signer;
 use crate::model::wallet_config::AddressBookEntry;
 use crate::utils::SlotId;
@@ -70,7 +70,7 @@ pub enum ProgramInstruction {
 
     /// 0  `[writable]` The multisig operation account
     /// 1. `[]` The program config account
-    /// 2. `[]` The source account
+    /// 2. `[writable]` The source account
     /// 3. `[]` The destination account
     /// 4. `[signer]` The initiator account (either the transaction assistant or an approver)
     /// 5. `[]` The sysvar clock account
@@ -112,6 +112,37 @@ pub enum ProgramInstruction {
         wallet_guid_hash: [u8; 32],
         amount: u64,
         token_mint: Pubkey,
+    },
+
+    /// 0  `[writable]` The multisig operation account
+    /// 1. `[]` The program config account
+    /// 2. `[writable]` The account
+    /// 3. `[writable]` The associated wrapped SOL account
+    /// 4. `[]` The native mint account
+    /// 5. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 6. `[]` The sysvar clock account
+    /// 7. `[]` The system program
+    /// 8. `[]` The SPL token program
+    /// 9. `[]` The Rent sysvar program
+    /// 10. `[]` The SPL associated token program
+    InitWrapUnwrap {
+        wallet_guid_hash: [u8; 32],
+        amount: u64,
+        direction: WrapDirection,
+    },
+
+    /// 0  `[writable]` The multisig operation account
+    /// 1. `[]` The program config account
+    /// 2. `[writable]` The account
+    /// 3. `[]` The system program
+    /// 4. `[signer]` The rent collector account
+    /// 5. `[]` The sysvar clock account
+    /// 6. `[writable]` The wrapped SOL token account
+    /// 7. `[]` The SPL token account
+    FinalizeWrapUnwrap {
+        wallet_guid_hash: [u8; 32],
+        amount: u64,
+        direction: WrapDirection,
     },
 }
 
@@ -206,6 +237,26 @@ impl ProgramInstruction {
                 buf.extend_from_slice(&token_mint.to_bytes());
                 buf.push(0);
             }
+            &ProgramInstruction::InitWrapUnwrap {
+                ref wallet_guid_hash,
+                ref amount,
+                ref direction,
+            } => {
+                buf.push(10);
+                buf.extend_from_slice(&wallet_guid_hash[..]);
+                buf.extend_from_slice(&amount.to_le_bytes());
+                buf.push(direction.to_u8());
+            }
+            &ProgramInstruction::FinalizeWrapUnwrap {
+                ref wallet_guid_hash,
+                ref amount,
+                ref direction,
+            } => {
+                buf.push(11);
+                buf.extend_from_slice(&wallet_guid_hash[..]);
+                buf.extend_from_slice(&amount.to_le_bytes());
+                buf.push(direction.to_u8());
+            }
         }
         buf
     }
@@ -226,6 +277,8 @@ impl ProgramInstruction {
             7 => Self::unpack_init_transfer_for_approval_instruction(rest)?,
             8 => Self::unpack_finalize_transfer_instruction(rest)?,
             9 => Self::unpack_set_approval_disposition_instruction(rest)?,
+            10 => Self::unpack_init_wrap_unwrap_instruction(rest)?,
+            11 => Self::unpack_finalize_wrap_unwrap_instruction(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -360,6 +413,50 @@ impl ProgramInstruction {
                     .ok_or(ProgramError::InvalidInstructionData)?,
             ),
         })
+    }
+
+    fn unpack_init_wrap_unwrap_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        let wallet_guid_hash = unpack_wallet_guid_hash(bytes)?;
+
+        let amount = bytes
+            .get(32..40)
+            .and_then(|slice| slice.try_into().ok())
+            .map(u64::from_le_bytes)
+            .ok_or(ProgramError::InvalidInstructionData)?;
+
+        if let Some(direction) = bytes.get(40) {
+            Ok(Self::InitWrapUnwrap {
+                wallet_guid_hash,
+                amount,
+                direction: WrapDirection::from_u8(*direction),
+            })
+        } else {
+            Err(ProgramError::InvalidInstructionData)
+        }
+    }
+
+    fn unpack_finalize_wrap_unwrap_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        let wallet_guid_hash = unpack_wallet_guid_hash(bytes)?;
+
+        let amount = bytes
+            .get(32..40)
+            .and_then(|slice| slice.try_into().ok())
+            .map(u64::from_le_bytes)
+            .ok_or(ProgramError::InvalidInstructionData)?;
+
+        if let Some(direction) = bytes.get(40) {
+            Ok(Self::FinalizeWrapUnwrap {
+                wallet_guid_hash,
+                amount,
+                direction: WrapDirection::from_u8(*direction),
+            })
+        } else {
+            Err(ProgramError::InvalidInstructionData)
+        }
     }
 }
 
@@ -918,6 +1015,91 @@ pub fn finalize_transfer(
             AccountMeta::new_readonly(*token_authority.unwrap(), false),
         ])
     }
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn init_wrap_unwrap(
+    program_id: &Pubkey,
+    program_config_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    assistant_account: &Pubkey,
+    account: &Pubkey,
+    wallet_guid_hash: [u8; 32],
+    amount: u64,
+    direction: WrapDirection,
+) -> Instruction {
+    let data = ProgramInstruction::InitWrapUnwrap {
+        wallet_guid_hash,
+        amount,
+        direction,
+    }
+    .borrow()
+    .pack();
+
+    let wrapped_sol_account = spl_associated_token_account::get_associated_token_address(
+        account,
+        &spl_token::native_mint::id(),
+    );
+
+    let accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new_readonly(*program_config_account, false),
+        AccountMeta::new(*account, false),
+        AccountMeta::new(wrapped_sol_account, false),
+        AccountMeta::new_readonly(spl_token::native_mint::id(), false),
+        AccountMeta::new_readonly(*assistant_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+        AccountMeta::new_readonly(system_program::id(), false),
+        AccountMeta::new_readonly(spl_token::id(), false),
+        AccountMeta::new_readonly(sysvar::rent::id(), false),
+        AccountMeta::new_readonly(spl_associated_token_account::id(), false),
+    ];
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn finalize_wrap_unwrap(
+    program_id: &Pubkey,
+    multisig_op_account: &Pubkey,
+    program_config_account: &Pubkey,
+    account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    wallet_guid_hash: [u8; 32],
+    amount: u64,
+    direction: WrapDirection,
+) -> Instruction {
+    let data = ProgramInstruction::FinalizeWrapUnwrap {
+        wallet_guid_hash,
+        amount,
+        direction,
+    }
+    .borrow()
+    .pack();
+
+    let wrapped_sol_account = spl_associated_token_account::get_associated_token_address(
+        account,
+        &spl_token::native_mint::id(),
+    );
+
+    let accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new_readonly(*program_config_account, false),
+        AccountMeta::new(*account, false),
+        AccountMeta::new_readonly(system_program::id(), false),
+        AccountMeta::new_readonly(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+        AccountMeta::new(wrapped_sol_account, false),
+        AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
     Instruction {
         program_id: *program_id,
         accounts,
