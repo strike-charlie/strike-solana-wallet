@@ -116,7 +116,7 @@ pub enum ProgramInstruction {
 
     /// 0  `[writable]` The multisig operation account
     /// 1. `[]` The program config account
-    /// 2. `[writable]` The account
+    /// 2. `[writable]` The balance account
     /// 3. `[writable]` The associated wrapped SOL account
     /// 4. `[]` The native mint account
     /// 5. `[signer]` The initiator account (either the transaction assistant or an approver)
@@ -133,7 +133,7 @@ pub enum ProgramInstruction {
 
     /// 0  `[writable]` The multisig operation account
     /// 1. `[]` The program config account
-    /// 2. `[writable]` The account
+    /// 2. `[writable]` The balance account
     /// 3. `[]` The system program
     /// 4. `[signer]` The rent collector account
     /// 5. `[]` The sysvar clock account
@@ -1027,7 +1027,7 @@ pub fn init_wrap_unwrap(
     program_config_account: &Pubkey,
     multisig_op_account: &Pubkey,
     assistant_account: &Pubkey,
-    account: &Pubkey,
+    balance_account: &Pubkey,
     wallet_guid_hash: [u8; 32],
     amount: u64,
     direction: WrapDirection,
@@ -1041,14 +1041,14 @@ pub fn init_wrap_unwrap(
     .pack();
 
     let wrapped_sol_account = spl_associated_token_account::get_associated_token_address(
-        account,
+        balance_account,
         &spl_token::native_mint::id(),
     );
 
     let accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new_readonly(*program_config_account, false),
-        AccountMeta::new(*account, false),
+        AccountMeta::new(*balance_account, false),
         AccountMeta::new(wrapped_sol_account, false),
         AccountMeta::new_readonly(spl_token::native_mint::id(), false),
         AccountMeta::new_readonly(*assistant_account, true),
@@ -1070,7 +1070,7 @@ pub fn finalize_wrap_unwrap(
     program_id: &Pubkey,
     multisig_op_account: &Pubkey,
     program_config_account: &Pubkey,
-    account: &Pubkey,
+    balance_account: &Pubkey,
     rent_collector_account: &Pubkey,
     wallet_guid_hash: [u8; 32],
     amount: u64,
@@ -1085,14 +1085,14 @@ pub fn finalize_wrap_unwrap(
     .pack();
 
     let wrapped_sol_account = spl_associated_token_account::get_associated_token_address(
-        account,
+        balance_account,
         &spl_token::native_mint::id(),
     );
 
     let accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new_readonly(*program_config_account, false),
-        AccountMeta::new(*account, false),
+        AccountMeta::new(*balance_account, false),
         AccountMeta::new_readonly(system_program::id(), false),
         AccountMeta::new_readonly(*rent_collector_account, true),
         AccountMeta::new_readonly(sysvar::clock::id(), false),

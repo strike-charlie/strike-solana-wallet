@@ -546,15 +546,15 @@ impl Processor {
         };
 
         if multisig_op.approved(&expected_params, &clock)? {
-            let (source_account_pda, bump_seed) =
-                Pubkey::find_program_address(&[&wallet_guid_hash], program_id);
-            if &source_account_pda != source_account.key {
-                return Err(WalletError::InvalidSourceAccount.into());
-            }
+            let bump_seed = Self::validate_balance_account_and_get_seed(
+                source_account,
+                wallet_guid_hash,
+                program_id,
+            )?;
             if is_spl {
                 let source_token_account = next_account_info(accounts_iter)?;
                 let source_token_account_key =
-                    get_associated_token_address(&source_account_pda, &token_mint);
+                    get_associated_token_address(source_account.key, &token_mint);
                 if *source_token_account.key != source_token_account_key {
                     return Err(WalletError::InvalidSourceTokenAccount.into());
                 }
@@ -583,7 +583,7 @@ impl Processor {
                         &SPL_TOKEN_ID(),
                         &source_token_account_key,
                         &destination_token_account_key,
-                        &source_account_pda,
+                        source_account.key,
                         &[],
                         amount,
                     )?,
@@ -607,18 +607,13 @@ impl Processor {
                     return Err(WalletError::InsufficientBalance.into());
                 }
 
-                invoke_signed(
-                    &system_instruction::transfer(
-                        source_account.key,
-                        destination_account.key,
-                        amount,
-                    ),
-                    &[
-                        source_account.clone(),
-                        destination_account.clone(),
-                        system_program_account.clone(),
-                    ],
-                    &[&[&wallet_guid_hash[..], &[bump_seed]]],
+                Self::transfer_sol_checked(
+                    source_account.clone(),
+                    wallet_guid_hash,
+                    bump_seed,
+                    system_program_account.clone(),
+                    destination_account.clone(),
+                    amount,
                 )?;
             }
         }
@@ -636,10 +631,9 @@ impl Processor {
         direction: WrapDirection,
     ) -> ProgramResult {
         let accounts_iter = &mut accounts.iter();
-        let multisig_op_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
-        let program_config_account_info =
-            Self::next_program_account_info(accounts_iter, program_id)?;
-        let account = next_account_info(accounts_iter)?;
+        let multisig_op_account = Self::next_program_account_info(accounts_iter, program_id)?;
+        let program_config_account = Self::next_program_account_info(accounts_iter, program_id)?;
+        let balance_account = next_account_info(accounts_iter)?;
         let wrapped_sol_account = next_account_info(accounts_iter)?;
         let native_mint_account = next_account_info(accounts_iter)?;
         if *native_mint_account.key != spl_token::native_mint::id() {
@@ -647,31 +641,31 @@ impl Processor {
             return Err(ProgramError::InvalidAccountData);
         }
 
-        let initiator_account_info = next_account_info(accounts_iter)?;
+        let initiator_account = next_account_info(accounts_iter)?;
         let clock = Self::get_clock_from_next_account(accounts_iter)?;
 
-        let program_config = ProgramConfig::unpack(&program_config_account_info.data.borrow())?;
+        let program_config = ProgramConfig::unpack(&program_config_account.data.borrow())?;
         let wallet_config = program_config.get_wallet_config(&wallet_guid_hash)?;
 
-        program_config.validate_transfer_initiator(wallet_config, initiator_account_info)?;
+        program_config.validate_transfer_initiator(wallet_config, initiator_account)?;
 
         if direction == WrapDirection::WRAP && *wrapped_sol_account.owner == Pubkey::default() {
             // we need to create the wrapped SOL account (if it had been created already
             // it would be owned by the Token program). Since this is an attempt to wrap
             // SOL, it stands to reason they have some SOL in their account, so we assume
             // they have enough to create this account (if they don't, it will just fail)
-            let (account_pda, bump_seed) =
-                Pubkey::find_program_address(&[&wallet_guid_hash[..]], program_id);
-            if &account_pda != account.key {
-                return Err(WalletError::InvalidSourceAccount.into());
-            }
+            let bump_seed = Self::validate_balance_account_and_get_seed(
+                balance_account,
+                wallet_guid_hash,
+                program_id,
+            )?;
             invoke_signed(
                 &Instruction {
                     program_id: spl_associated_token_account::id(),
                     accounts: vec![
-                        AccountMeta::new(account_pda, true),
+                        AccountMeta::new(*balance_account.key, true),
                         AccountMeta::new(*wrapped_sol_account.key, false),
-                        AccountMeta::new_readonly(account_pda, false),
+                        AccountMeta::new_readonly(*balance_account.key, false),
                         AccountMeta::new_readonly(*native_mint_account.key, false),
                         AccountMeta::new_readonly(solana_program::system_program::id(), false),
                         AccountMeta::new_readonly(spl_token::id(), false),
@@ -684,8 +678,7 @@ impl Processor {
             )?;
         }
 
-        let mut multisig_op =
-            MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
+        let mut multisig_op = MultisigOp::unpack_unchecked(&multisig_op_account.data.borrow())?;
         multisig_op.init(
             program_config.get_transfer_approvers_keys(wallet_config),
             wallet_config.approvals_required_for_transfer,
@@ -695,13 +688,13 @@ impl Processor {
                 wallet_config.approval_timeout_for_transfer,
             )?,
             MultisigOpParams::Wrap {
-                program_config_address: *program_config_account_info.key,
+                program_config_address: *program_config_account.key,
                 wallet_guid_hash,
                 amount,
                 direction,
             },
         )?;
-        MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
+        MultisigOp::pack(multisig_op, &mut multisig_op_account.data.borrow_mut())?;
         Ok(())
     }
 
@@ -713,16 +706,15 @@ impl Processor {
         direction: WrapDirection,
     ) -> ProgramResult {
         let accounts_iter = &mut accounts.iter();
-        let multisig_op_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
-        let program_config_account_info =
-            Self::next_program_account_info(accounts_iter, program_id)?;
-        let account = next_account_info(accounts_iter)?;
+        let multisig_op_account = Self::next_program_account_info(accounts_iter, program_id)?;
+        let program_config_account = Self::next_program_account_info(accounts_iter, program_id)?;
+        let balance_account = next_account_info(accounts_iter)?;
         let system_program_account = next_account_info(accounts_iter)?;
-        let rent_collector_account_info = next_account_info(accounts_iter)?;
+        let rent_collector_account = next_account_info(accounts_iter)?;
         let clock = Self::get_clock_from_next_account(accounts_iter)?;
         let wrapped_sol_account = next_account_info(accounts_iter)?;
 
-        if !rent_collector_account_info.is_signer {
+        if !rent_collector_account.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
@@ -730,52 +722,43 @@ impl Processor {
             return Err(ProgramError::InvalidArgument);
         }
 
-        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
+        let multisig_op = MultisigOp::unpack(&multisig_op_account.data.borrow())?;
 
         let expected_params = MultisigOpParams::Wrap {
-            program_config_address: *program_config_account_info.key,
+            program_config_address: *program_config_account.key,
             wallet_guid_hash,
             amount,
             direction,
         };
 
         if multisig_op.approved(&expected_params, &clock)? {
-            let (account_pda, bump_seed) =
-                Pubkey::find_program_address(&[&wallet_guid_hash], program_id);
-            if &account_pda != account.key {
-                return Err(WalletError::InvalidSourceAccount.into());
-            }
+            let bump_seed = Self::validate_balance_account_and_get_seed(
+                balance_account,
+                wallet_guid_hash,
+                program_id,
+            )?;
 
             let wrapped_sol_account_key =
-                get_associated_token_address(&account_pda, &spl_token::native_mint::id());
+                get_associated_token_address(balance_account.key, &spl_token::native_mint::id());
             if *wrapped_sol_account.key != wrapped_sol_account_key {
                 return Err(WalletError::InvalidSourceTokenAccount.into());
             }
 
             if direction == WrapDirection::WRAP {
-                if account.lamports() < amount {
-                    msg!(
-                        "Account only has {} SOL of {} requested",
-                        account.lamports(),
-                        amount
-                    );
-                    return Err(WalletError::InsufficientBalance.into());
-                }
-                invoke_signed(
-                    &system_instruction::transfer(account.key, wrapped_sol_account.key, amount),
-                    &[
-                        account.clone(),
-                        wrapped_sol_account.clone(),
-                        system_program_account.clone(),
-                    ],
-                    &[&[&wallet_guid_hash[..], &[bump_seed]]],
+                Self::transfer_sol_checked(
+                    balance_account.clone(),
+                    wallet_guid_hash,
+                    bump_seed,
+                    system_program_account.clone(),
+                    wrapped_sol_account.clone(),
+                    amount,
                 )?;
             } else {
                 let wrapped_sol_account_data =
                     SPLAccount::unpack(&wrapped_sol_account.data.borrow())?;
                 if wrapped_sol_account_data.amount < amount {
                     msg!(
-                        "Wrapped SOL account only has {} SOL of {} requested",
+                        "Wrapped SOL account only has {} lamports of {} requested",
                         wrapped_sol_account_data.amount,
                         amount
                     );
@@ -793,22 +776,21 @@ impl Processor {
                     &spl_token::instruction::close_account(
                         &spl_token::id(),
                         &wrapped_sol_account.key,
-                        &account.key,
-                        &account.key,
+                        &balance_account.key,
+                        &balance_account.key,
                         &[],
                     )?,
-                    &[wrapped_sol_account.clone(), account.clone()],
+                    &[wrapped_sol_account.clone(), balance_account.clone()],
                     &[&[&wallet_guid_hash[..], &[bump_seed]]],
                 )?;
 
-                invoke_signed(
-                    &system_instruction::transfer(account.key, wrapped_sol_account.key, remaining),
-                    &[
-                        account.clone(),
-                        wrapped_sol_account.clone(),
-                        system_program_account.clone(),
-                    ],
-                    &[&[&wallet_guid_hash[..], &[bump_seed]]],
+                Self::transfer_sol_checked(
+                    balance_account.clone(),
+                    wallet_guid_hash,
+                    bump_seed,
+                    system_program_account.clone(),
+                    wrapped_sol_account.clone(),
+                    remaining,
                 )?;
             }
 
@@ -818,7 +800,7 @@ impl Processor {
             )?;
         }
 
-        Self::collect_remaining_balance(&multisig_op_account_info, &rent_collector_account_info)?;
+        Self::collect_remaining_balance(&multisig_op_account, &rent_collector_account)?;
 
         Ok(())
     }
@@ -889,5 +871,43 @@ impl Processor {
             return Err(ProgramError::InvalidArgument);
         }
         Ok(expires_at.unwrap())
+    }
+
+    fn transfer_sol_checked<'a>(
+        balance_account: AccountInfo<'a>,
+        wallet_guid_hash: [u8; 32],
+        bump_seed: u8,
+        system_program_account: AccountInfo<'a>,
+        to: AccountInfo<'a>,
+        lamports: u64,
+    ) -> ProgramResult {
+        if balance_account.lamports() < lamports {
+            msg!(
+                "Account only has {} lamports of {} requested",
+                balance_account.lamports(),
+                lamports
+            );
+            return Err(WalletError::InsufficientBalance.into());
+        }
+        let instruction = &system_instruction::transfer(balance_account.key, to.key, lamports);
+        invoke_signed(
+            instruction,
+            &[balance_account, to, system_program_account],
+            &[&[&wallet_guid_hash[..], &[bump_seed]]],
+        )
+    }
+
+    fn validate_balance_account_and_get_seed(
+        balance_account: &AccountInfo,
+        wallet_guid_hash: [u8; 32],
+        program_id: &Pubkey,
+    ) -> Result<u8, ProgramError> {
+        let (account_pda, bump_seed) =
+            Pubkey::find_program_address(&[&wallet_guid_hash[..]], program_id);
+        if &account_pda != balance_account.key {
+            Err(WalletError::InvalidSourceAccount.into())
+        } else {
+            Ok(bump_seed)
+        }
     }
 }

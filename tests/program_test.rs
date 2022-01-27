@@ -2128,7 +2128,7 @@ async fn test_transfer_spl(
     create_destination_token_account: bool,
     fund_source_account_to_pay_for_token: bool,
 ) {
-    let (mut context, balance_account) = utils::setup_wallet_tests_and_finalize(Some(50000)).await;
+    let (mut context, balance_account) = utils::setup_wallet_tests_and_finalize(Some(60_000)).await;
 
     let spl_context = utils::setup_spl_transfer_test(
         &mut context,
@@ -2220,7 +2220,7 @@ async fn test_transfer_spl(
 
 #[tokio::test]
 async fn test_transfer_spl_insufficient_balance() {
-    let (mut context, balance_account) = utils::setup_wallet_tests_and_finalize(Some(50_000)).await;
+    let (mut context, balance_account) = utils::setup_wallet_tests_and_finalize(Some(60_000)).await;
     let spl_context = utils::setup_spl_transfer_test(&mut context, &balance_account, true).await;
 
     let (multisig_op_account, result) = utils::setup_transfer_test(
