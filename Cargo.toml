@@ -3,13 +3,14 @@ name = "strike-wallet"
 version = "0.0.1"
 edition = "2018"
 publish = false
+resolver = "2"
 
 [dependencies]
 arrayref = "0.3.6"
 bitvec = "1.0"
 itertools = "0.10.3"
-solana-program = "=1.7.11"
-spl-associated-token-account = "=1.0.3"
+solana-program = "=1.8.14"
+spl-associated-token-account = { version = "=1.0.3", features = ["no-entrypoint"] }
 spl-token = "=3.2.0"
 thiserror = "1.0.30"
 
@@ -20,9 +21,9 @@ no-entrypoint = []
 [dev-dependencies]
 assert_matches = "1.5.0"
 sha2 = "0.10.1"
-solana-program-test = "=1.7.11"
-solana-sdk = "=1.7.11"
-solana-validator = "=1.7.11"
+solana-program-test = "=1.8.14"
+solana-sdk = "=1.8.14"
+solana-validator = "=1.8.14"
 uuid = { version = "0.8.2", features = ["v4"] }
 
 [lib]

@@ -11,7 +11,7 @@ use solana_program::program_pack::{IsInitialized, Pack};
 use solana_program::pubkey::Pubkey;
 use solana_program::system_instruction;
 use solana_program::system_program;
-use solana_program::sysvar::{is_sysvar_id, Sysvar};
+use solana_program::sysvar::Sysvar;
 use solana_program::{msg, sysvar};
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::id as SPL_TOKEN_ID;
@@ -657,8 +657,8 @@ impl Processor {
 
     fn get_clock_from_next_account(iter: &mut Iter<AccountInfo>) -> Result<Clock, ProgramError> {
         let account_info = next_account_info(iter)?;
-        if !is_sysvar_id(account_info.key) {
-            msg!("Account is not a sysvar");
+        if solana_program::sysvar::clock::id() != *account_info.key {
+            msg!("Invalid clock account");
             return Err(ProgramError::InvalidArgument);
         }
         Clock::from_account_info(&account_info)
