@@ -13,7 +13,7 @@ use solana_program::{
 };
 
 use crate::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
-use crate::model::multisig_op::{ApprovalDisposition, WrapDirection};
+use crate::model::multisig_op::{ApprovalDisposition, SlotUpdateType, WrapDirection};
 use crate::model::signer::Signer;
 use crate::utils::SlotId;
 
@@ -145,6 +145,24 @@ pub enum ProgramInstruction {
         amount: u64,
         direction: WrapDirection,
     },
+    /// 0  `[writable]` The multisig operation account
+    /// 1. `[]` The program config account
+    /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 3. `[]` The sysvar clock account
+    InitUpdateSigner {
+        slot_update_type: SlotUpdateType,
+        slot_id: SlotId<Signer>,
+        signer: Signer,
+    },
+
+    /// 0  `[writable]` The multisig operation account
+    /// 1. `[writable]` The program config account
+    /// 2. `[signer]` The rent collector account
+    FinalizeUpdateSigner {
+        slot_update_type: SlotUpdateType,
+        slot_id: SlotId<Signer>,
+        signer: Signer,
+    },
 }
 
 impl ProgramInstruction {
@@ -258,6 +276,26 @@ impl ProgramInstruction {
                 buf.extend_from_slice(&amount.to_le_bytes());
                 buf.push(direction.to_u8());
             }
+            &ProgramInstruction::InitUpdateSigner {
+                ref slot_update_type,
+                ref slot_id,
+                ref signer,
+            } => {
+                buf.push(12);
+                buf.push(slot_update_type.to_u8());
+                buf.push(slot_id.value as u8);
+                buf.extend_from_slice(signer.key.as_ref());
+            }
+            &ProgramInstruction::FinalizeUpdateSigner {
+                ref slot_update_type,
+                ref slot_id,
+                ref signer,
+            } => {
+                buf.push(13);
+                buf.push(slot_update_type.to_u8());
+                buf.push(slot_id.value as u8);
+                buf.extend_from_slice(signer.key.as_ref());
+            }
         }
         buf
     }
@@ -280,6 +318,8 @@ impl ProgramInstruction {
             9 => Self::unpack_set_approval_disposition_instruction(rest)?,
             10 => Self::unpack_init_wrap_unwrap_instruction(rest)?,
             11 => Self::unpack_finalize_wrap_unwrap_instruction(rest)?,
+            12 => Self::unpack_init_update_signer(rest)?,
+            13 => Self::unpack_finalize_update_signer(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -455,6 +495,34 @@ impl ProgramInstruction {
         } else {
             Err(ProgramError::InvalidInstructionData)
         }
+    }
+
+    fn unpack_init_update_signer(bytes: &[u8]) -> Result<ProgramInstruction, ProgramError> {
+        let (slot_update_type, rest) = bytes
+            .split_first()
+            .ok_or(ProgramError::InvalidInstructionData)?;
+        let (slot_id, rest) = rest
+            .split_first()
+            .ok_or(ProgramError::InvalidInstructionData)?;
+        Ok(Self::InitUpdateSigner {
+            slot_update_type: SlotUpdateType::from_u8(*slot_update_type),
+            slot_id: SlotId::new(*slot_id as usize),
+            signer: Signer::unpack_from_slice(rest)?,
+        })
+    }
+
+    fn unpack_finalize_update_signer(bytes: &[u8]) -> Result<ProgramInstruction, ProgramError> {
+        let (slot_update_type, rest) = bytes
+            .split_first()
+            .ok_or(ProgramError::InvalidInstructionData)?;
+        let (slot_id, rest) = rest
+            .split_first()
+            .ok_or(ProgramError::InvalidInstructionData)?;
+        Ok(Self::FinalizeUpdateSigner {
+            slot_update_type: SlotUpdateType::from_u8(*slot_update_type),
+            slot_id: SlotId::new(*slot_id as usize),
+            signer: Signer::unpack_from_slice(rest)?,
+        })
     }
 }
 
@@ -1101,6 +1169,62 @@ pub fn finalize_wrap_unwrap(
         AccountMeta::new_readonly(sysvar::clock::id(), false),
         AccountMeta::new(wrapped_sol_account, false),
         AccountMeta::new_readonly(spl_token::id(), false),
+    ];
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn init_update_signer(
+    program_id: &Pubkey,
+    program_config_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    assistant_account: &Pubkey,
+    slot_update_type: SlotUpdateType,
+    slot_id: SlotId<Signer>,
+    signer: Signer,
+) -> Instruction {
+    let data = ProgramInstruction::InitUpdateSigner {
+        slot_update_type,
+        slot_id,
+        signer,
+    }
+    .borrow()
+    .pack();
+    init_multisig_op(
+        program_id,
+        program_config_account,
+        multisig_op_account,
+        assistant_account,
+        data,
+    )
+}
+
+pub fn finalize_update_signer(
+    program_id: &Pubkey,
+    program_config_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    slot_update_type: SlotUpdateType,
+    slot_id: SlotId<Signer>,
+    signer: Signer,
+) -> Instruction {
+    let data = ProgramInstruction::FinalizeUpdateSigner {
+        slot_update_type,
+        slot_id,
+        signer,
+    }
+    .borrow()
+    .pack();
+
+    let accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*program_config_account, false),
+        AccountMeta::new_readonly(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
 
     Instruction {

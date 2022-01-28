@@ -22,9 +22,12 @@ use crate::error::WalletError;
 use crate::instruction::{BalanceAccountUpdate, ProgramInstruction, WalletUpdate};
 use crate::model::address_book::AddressBookEntryNameHash;
 use crate::model::balance_account::BalanceAccountGuidHash;
-use crate::model::multisig_op::{ApprovalDisposition, MultisigOp, MultisigOpParams, WrapDirection};
+use crate::model::multisig_op::{
+    ApprovalDisposition, MultisigOp, MultisigOpParams, SlotUpdateType, WrapDirection,
+};
 use crate::model::signer::Signer;
 use crate::model::wallet::Wallet;
+use crate::utils::SlotId;
 use solana_program::clock::Clock;
 use solana_program::rent::Rent;
 
@@ -141,6 +144,30 @@ impl Processor {
                 &account_guid_hash,
                 amount,
                 direction,
+            ),
+
+            ProgramInstruction::InitUpdateSigner {
+                slot_update_type,
+                slot_id,
+                signer,
+            } => Self::handle_init_update_signer(
+                program_id,
+                &accounts,
+                slot_update_type,
+                slot_id,
+                signer,
+            ),
+
+            ProgramInstruction::FinalizeUpdateSigner {
+                slot_update_type,
+                slot_id,
+                signer,
+            } => Self::handle_finalize_update_signer(
+                program_id,
+                &accounts,
+                slot_update_type,
+                slot_id,
+                signer,
             ),
         }
     }
@@ -803,6 +830,86 @@ impl Processor {
             &clock,
         )?;
         MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
+
+        Ok(())
+    }
+
+    fn handle_init_update_signer(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        slot_update_type: SlotUpdateType,
+        slot_id: SlotId<Signer>,
+        signer: Signer,
+    ) -> ProgramResult {
+        let accounts_iter = &mut accounts.iter();
+        let multisig_op_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
+        let wallet_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
+        let initiator_account_info = next_account_info(accounts_iter)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
+
+        let wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
+        wallet.validate_config_initiator(initiator_account_info)?;
+        match slot_update_type {
+            SlotUpdateType::SetIfEmpty => wallet.validate_add_signer((slot_id, signer))?,
+            SlotUpdateType::Clear => wallet.validate_remove_signer((slot_id, signer))?,
+        }
+
+        let mut multisig_op =
+            MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
+
+        multisig_op.init(
+            wallet.get_config_approvers_keys(),
+            wallet.approvals_required_for_config,
+            clock.unix_timestamp,
+            Self::calculate_expires(clock.unix_timestamp, wallet.approval_timeout_for_config)?,
+            MultisigOpParams::UpdateSigner {
+                wallet_address: *wallet_account_info.key,
+                slot_update_type,
+                slot_id,
+                signer,
+            },
+        )?;
+        MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
+
+        Ok(())
+    }
+
+    fn handle_finalize_update_signer(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        slot_update_type: SlotUpdateType,
+        slot_id: SlotId<Signer>,
+        signer: Signer,
+    ) -> ProgramResult {
+        let accounts_iter = &mut accounts.iter();
+        let multisig_op_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
+        let wallet_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
+        let account_to_return_rent_to = next_account_info(accounts_iter)?;
+        let clock = Self::get_clock_from_next_account(accounts_iter)?;
+
+        if !account_to_return_rent_to.is_signer {
+            return Err(ProgramError::MissingRequiredSignature);
+        }
+
+        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
+
+        let expected_params = MultisigOpParams::UpdateSigner {
+            wallet_address: *wallet_account_info.key,
+            slot_update_type,
+            slot_id,
+            signer,
+        };
+
+        if multisig_op.approved(&expected_params, &clock)? {
+            let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow_mut())?;
+            match slot_update_type {
+                SlotUpdateType::SetIfEmpty => wallet.add_signer((slot_id, signer))?,
+                SlotUpdateType::Clear => wallet.remove_signer((slot_id, signer))?,
+            }
+            Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
+        }
+
+        Self::collect_remaining_balance(&multisig_op_account_info, &account_to_return_rent_to)?;
 
         Ok(())
     }

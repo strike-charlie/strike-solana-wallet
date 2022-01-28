@@ -19,13 +19,13 @@ use std::collections::HashSet;
 use strike_wallet::error::WalletError;
 use strike_wallet::instruction::{
     finalize_balance_account_creation, finalize_balance_account_update, finalize_transfer,
-    finalize_wallet_update, init_balance_account_update, init_wallet_update,
+    finalize_wallet_update, init_balance_account_update, init_update_signer, init_wallet_update,
     set_approval_disposition, BalanceAccountUpdate,
 };
 use strike_wallet::model::address_book::{AddressBook, AddressBookEntry, AddressBookEntryNameHash};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
-    ApprovalDisposition, ApprovalDispositionRecord, OperationDisposition,
+    ApprovalDisposition, ApprovalDispositionRecord, OperationDisposition, SlotUpdateType,
 };
 use strike_wallet::model::signer::Signer;
 use strike_wallet::model::wallet::{Approvers, Signers, Wallet};
@@ -699,8 +699,126 @@ async fn wallet_update_not_signed_by_rent_collector() {
 }
 
 #[tokio::test]
+async fn test_add_and_remove_signer() {
+    let mut context = utils::setup_wallet_update_test().await;
+
+    let expected_signers_after_add = Signers::from_vec(vec![
+        (SlotId::new(0), context.approvers[0].pubkey_as_signer()),
+        (SlotId::new(1), context.approvers[1].pubkey_as_signer()),
+        (SlotId::new(2), context.approvers[2].pubkey_as_signer()),
+    ]);
+
+    let signer_to_add_and_remove = context.approvers[2].pubkey_as_signer();
+
+    utils::update_signer(
+        context.borrow_mut(),
+        SlotUpdateType::SetIfEmpty,
+        2,
+        signer_to_add_and_remove,
+        Some(expected_signers_after_add),
+        None,
+    )
+    .await;
+
+    let expected_signers_after_remove = Signers::from_vec(vec![
+        (SlotId::new(0), context.approvers[0].pubkey_as_signer()),
+        (SlotId::new(1), context.approvers[1].pubkey_as_signer()),
+    ]);
+
+    utils::update_signer(
+        context.borrow_mut(),
+        SlotUpdateType::Clear,
+        2,
+        signer_to_add_and_remove,
+        Some(expected_signers_after_remove),
+        None,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_add_and_remove_signer_init_failures() {
+    let mut context = utils::setup_wallet_update_test().await;
+
+    let signer_to_add_and_remove = context.approvers[2].pubkey_as_signer();
+
+    // put a signer in a slot already filled
+    utils::update_signer(
+        context.borrow_mut(),
+        SlotUpdateType::SetIfEmpty,
+        1,
+        signer_to_add_and_remove,
+        None,
+        Some(InvalidArgument),
+    )
+    .await;
+
+    // try to remove the signer from an occupied slot but give a wrong key
+    utils::update_signer(
+        context.borrow_mut(),
+        SlotUpdateType::Clear,
+        1,
+        signer_to_add_and_remove,
+        None,
+        Some(InvalidArgument),
+    )
+    .await;
+
+    // try to remove the signer that is a config approver
+    let signer_to_add_and_remove = context.approvers[1].pubkey_as_signer();
+    utils::update_signer(
+        context.borrow_mut(),
+        SlotUpdateType::Clear,
+        1,
+        signer_to_add_and_remove,
+        None,
+        Some(InvalidArgument),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_remove_signer_fails_for_a_transfer_approver() {
+    let mut context = utils::setup_balance_account_tests(None, true).await;
+
+    utils::approve_or_deny_1_of_2_multisig_op(
+        context.banks_client.borrow_mut(),
+        &context.program_owner.pubkey(),
+        &context.multisig_op_account.pubkey(),
+        &context.approvers[0],
+        &context.payer,
+        &context.approvers[1].pubkey(),
+        context.recent_blockhash,
+        ApprovalDisposition::APPROVE,
+    )
+    .await;
+    utils::finalize_balance_account_creation(context.borrow_mut()).await;
+
+    // approvers 0 & 1 are config and transfer approvers, 2 is just a transfer approver
+    let multisig_op_account = Keypair::new();
+    verify_multisig_op_init_fails(
+        &mut context.banks_client,
+        context.recent_blockhash,
+        &context.payer,
+        &context.assistant_account,
+        &multisig_op_account,
+        init_update_signer(
+            &context.program_owner.pubkey(),
+            &context.wallet_account.pubkey(),
+            &multisig_op_account.pubkey(),
+            &context.assistant_account.pubkey(),
+            SlotUpdateType::Clear,
+            SlotId::new(2),
+            context.approvers[2].pubkey_as_signer(),
+        ),
+        InstructionError::InvalidArgument,
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn test_balance_account_creation() {
-    let mut context = utils::setup_balance_account_tests(None).await;
+    let mut context = utils::setup_balance_account_tests(None, false).await;
 
     utils::approve_or_deny_1_of_2_multisig_op(
         context.banks_client.borrow_mut(),
@@ -813,7 +931,7 @@ async fn test_balance_account_creation_fails_if_num_approvals_required_not_set()
 
 #[tokio::test]
 async fn test_balance_account_creation_not_signed_by_rent_collector() {
-    let mut context = utils::setup_balance_account_tests(None).await;
+    let mut context = utils::setup_balance_account_tests(None, false).await;
 
     let rent_collector = Keypair::new();
     let mut instruction = finalize_balance_account_creation(
@@ -845,7 +963,7 @@ async fn test_balance_account_creation_not_signed_by_rent_collector() {
 
 #[tokio::test]
 async fn test_balance_account_creation_incorrect_hash() {
-    let mut context = utils::setup_balance_account_tests(None).await;
+    let mut context = utils::setup_balance_account_tests(None, false).await;
 
     let wrong_guid_hash = BalanceAccountGuidHash::zero();
 
@@ -902,7 +1020,7 @@ async fn test_balance_account_creation_incorrect_hash() {
 
 #[tokio::test]
 async fn test_balance_account_update() {
-    let mut context = utils::setup_balance_account_tests(None).await;
+    let mut context = utils::setup_balance_account_tests(None, false).await;
 
     utils::approve_or_deny_1_of_2_multisig_op(
         context.banks_client.borrow_mut(),
@@ -1076,7 +1194,7 @@ async fn test_balance_account_update() {
 
 #[tokio::test]
 async fn test_balance_account_update_is_denied() {
-    let mut context = utils::setup_balance_account_tests(None).await;
+    let mut context = utils::setup_balance_account_tests(None, false).await;
 
     utils::approve_or_deny_1_of_2_multisig_op(
         context.banks_client.borrow_mut(),

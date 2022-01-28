@@ -140,6 +140,27 @@ impl Wallet {
         self_clone.update(update)
     }
 
+    pub fn validate_remove_signer(
+        &self,
+        signer_to_remove: (SlotId<Signer>, Signer),
+    ) -> ProgramResult {
+        let mut self_clone = self.clone();
+        self_clone.remove_signers(&vec![signer_to_remove])
+    }
+
+    pub fn validate_add_signer(&self, signer_to_add: (SlotId<Signer>, Signer)) -> ProgramResult {
+        let mut self_clone = self.clone();
+        self_clone.add_signers(&vec![signer_to_add])
+    }
+
+    pub fn remove_signer(&mut self, signer_to_remove: (SlotId<Signer>, Signer)) -> ProgramResult {
+        self.remove_signers(&vec![signer_to_remove])
+    }
+
+    pub fn add_signer(&mut self, signer_to_add: (SlotId<Signer>, Signer)) -> ProgramResult {
+        self.add_signers(&vec![signer_to_add])
+    }
+
     pub fn update(&mut self, update: &WalletUpdate) -> ProgramResult {
         self.approvals_required_for_config = update.approvals_required_for_config;
         if update.approval_timeout_for_config.as_secs() > 0 {

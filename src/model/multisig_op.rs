@@ -1,7 +1,9 @@
 use crate::error::WalletError;
 use crate::instruction::{BalanceAccountUpdate, WalletUpdate};
 use crate::model::balance_account::BalanceAccountGuidHash;
+use crate::model::signer::Signer;
 use crate::model::wallet::Wallet;
+use crate::utils::SlotId;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
@@ -90,6 +92,28 @@ impl WrapDirection {
         match self {
             WrapDirection::WRAP => 0,
             WrapDirection::UNWRAP => 1,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum SlotUpdateType {
+    SetIfEmpty = 0,
+    Clear = 1,
+}
+
+impl SlotUpdateType {
+    pub fn from_u8(value: u8) -> SlotUpdateType {
+        match value {
+            0 => SlotUpdateType::SetIfEmpty,
+            _ => SlotUpdateType::Clear,
+        }
+    }
+
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            SlotUpdateType::SetIfEmpty => 0,
+            SlotUpdateType::Clear => 1,
         }
     }
 }
@@ -381,6 +405,12 @@ pub enum MultisigOpParams {
         amount: u64,
         direction: WrapDirection,
     },
+    UpdateSigner {
+        wallet_address: Pubkey,
+        slot_update_type: SlotUpdateType,
+        slot_id: SlotId<Signer>,
+        signer: Signer,
+    },
 }
 
 impl MultisigOpParams {
@@ -488,6 +518,21 @@ impl MultisigOpParams {
                 account_guid_hash_ref.copy_from_slice(account_guid_hash.to_bytes());
                 *amount_ref = amount.to_le_bytes();
                 *direction_ref = direction.to_u8().to_le_bytes();
+                hash(&bytes)
+            }
+            MultisigOpParams::UpdateSigner {
+                wallet_address,
+                slot_update_type,
+                slot_id,
+                signer,
+            } => {
+                let mut bytes: Vec<u8> = Vec::new();
+                bytes.resize(1 + 2 + PUBKEY_BYTES * 2, 0);
+                bytes[0] = 5; // type code
+                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
+                bytes[33] = slot_update_type.to_u8();
+                bytes[34] = slot_id.value as u8;
+                bytes[35..67].copy_from_slice(signer.key.as_ref());
                 hash(&bytes)
             }
         }

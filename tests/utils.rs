@@ -12,14 +12,14 @@ use std::collections::HashSet;
 use std::time::Duration;
 use strike_wallet::instruction;
 use strike_wallet::instruction::{
-    init_balance_account_creation, init_transfer, init_wallet_update, set_approval_disposition,
-    BalanceAccountUpdate, WalletUpdate,
+    finalize_update_signer, init_balance_account_creation, init_transfer, init_update_signer,
+    init_wallet_update, set_approval_disposition, BalanceAccountUpdate, WalletUpdate,
 };
 use strike_wallet::model::address_book::{AddressBook, AddressBookEntry, AddressBookEntryNameHash};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
     ApprovalDisposition, ApprovalDispositionRecord, MultisigOp, MultisigOpParams,
-    OperationDisposition, WrapDirection,
+    OperationDisposition, SlotUpdateType, WrapDirection,
 };
 use strike_wallet::model::signer::Signer;
 use strike_wallet::model::wallet::{Approvers, Signers};
@@ -125,6 +125,7 @@ pub struct WalletUpdateContext {
     pub expected_update: WalletUpdate,
     pub params_hash: Hash,
     pub expected_state_after_update: Wallet,
+    pub assistant_account: Keypair,
 }
 
 pub async fn setup_wallet_update_test() -> WalletUpdateContext {
@@ -262,7 +263,190 @@ pub async fn setup_wallet_update_test() -> WalletUpdateContext {
             config_approvers: Approvers::from_enabled_vec(vec![SlotId::new(1), SlotId::new(2)]),
             balance_accounts: wallet.balance_accounts,
         },
+        assistant_account,
     }
+}
+
+pub async fn update_signer(
+    context: &mut WalletUpdateContext,
+    slot_update_type: SlotUpdateType,
+    slot_id: usize,
+    signer: Signer,
+    expected_signers: Option<Signers>,
+    expected_error: Option<InstructionError>,
+) {
+    let rent = context.banks_client.get_rent().await.unwrap();
+    let multisig_op_rent = rent.minimum_balance(MultisigOp::LEN);
+    let multisig_op_account = Keypair::new();
+    let init_transaction = Transaction::new_signed_with_payer(
+        &[
+            system_instruction::create_account(
+                &context.payer.pubkey(),
+                &multisig_op_account.pubkey(),
+                multisig_op_rent,
+                MultisigOp::LEN as u64,
+                &context.program_owner.pubkey(),
+            ),
+            init_update_signer(
+                &context.program_owner.pubkey(),
+                &context.wallet_account.pubkey(),
+                &multisig_op_account.pubkey(),
+                &context.assistant_account.pubkey(),
+                slot_update_type,
+                SlotId::new(slot_id),
+                signer,
+            ),
+        ],
+        Some(&context.payer.pubkey()),
+        &[
+            &context.payer,
+            &multisig_op_account,
+            &context.assistant_account,
+        ],
+        context.recent_blockhash,
+    );
+    match expected_error {
+        None => context
+            .banks_client
+            .process_transaction(init_transaction)
+            .await
+            .unwrap(),
+        Some(error) => {
+            assert_eq!(
+                context
+                    .banks_client
+                    .process_transaction(init_transaction)
+                    .await
+                    .unwrap_err()
+                    .unwrap(),
+                TransactionError::InstructionError(1, error),
+            );
+            return;
+        }
+    }
+
+    // verify the multisig op account data
+    let multisig_op = MultisigOp::unpack_from_slice(
+        context
+            .banks_client
+            .get_account(multisig_op_account.pubkey())
+            .await
+            .unwrap()
+            .unwrap()
+            .data(),
+    )
+    .unwrap();
+    assert!(multisig_op.is_initialized);
+    assert_eq!(
+        multisig_op.disposition_records.to_set(),
+        HashSet::from([
+            ApprovalDispositionRecord {
+                approver: context.approvers[0].pubkey(),
+                disposition: ApprovalDisposition::NONE,
+            },
+            ApprovalDispositionRecord {
+                approver: context.approvers[1].pubkey(),
+                disposition: ApprovalDisposition::NONE,
+            },
+        ])
+    );
+    assert_eq!(multisig_op.dispositions_required, 1);
+    assert_eq!(
+        multisig_op.operation_disposition,
+        OperationDisposition::NONE
+    );
+
+    assert_eq!(
+        multisig_op.params_hash,
+        MultisigOpParams::UpdateSigner {
+            wallet_address: context.wallet_account.pubkey(),
+            slot_update_type,
+            slot_id: SlotId::new(slot_id),
+            signer
+        }
+        .hash()
+    );
+
+    approve_or_deny_1_of_2_multisig_op(
+        context.banks_client.borrow_mut(),
+        &context.program_owner.pubkey(),
+        &multisig_op_account.pubkey(),
+        &context.approvers[0],
+        &context.payer,
+        &context.approvers[1].pubkey(),
+        context.recent_blockhash,
+        ApprovalDisposition::APPROVE,
+    )
+    .await;
+
+    // verify the multisig op account data
+    let multisig_op = MultisigOp::unpack_from_slice(
+        context
+            .banks_client
+            .get_account(multisig_op_account.pubkey())
+            .await
+            .unwrap()
+            .unwrap()
+            .data(),
+    )
+    .unwrap();
+    assert_eq!(
+        multisig_op.operation_disposition,
+        OperationDisposition::APPROVED
+    );
+
+    // finalize the multisig op
+    let finalize_transaction = Transaction::new_signed_with_payer(
+        &[finalize_update_signer(
+            &context.program_owner.pubkey(),
+            &context.wallet_account.pubkey(),
+            &multisig_op_account.pubkey(),
+            &context.payer.pubkey(),
+            slot_update_type,
+            SlotId::new(slot_id),
+            signer,
+        )],
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.recent_blockhash,
+    );
+    let starting_rent_collector_balance = context
+        .banks_client
+        .get_balance(context.payer.pubkey())
+        .await
+        .unwrap();
+    let op_account_balance = context
+        .banks_client
+        .get_balance(context.multisig_op_account.pubkey())
+        .await
+        .unwrap();
+    context
+        .banks_client
+        .process_transaction(finalize_transaction)
+        .await
+        .unwrap();
+
+    // verify the config has been updated
+    let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
+    assert_eq!(expected_signers.unwrap(), wallet.signers);
+
+    // verify the multisig op account is closed
+    assert!(context
+        .banks_client
+        .get_account(multisig_op_account.pubkey())
+        .await
+        .unwrap()
+        .is_none());
+    // and that the remaining balance went to the rent collector (less the 5000 in fees for the finalize)
+    let ending_rent_collector_balance = context
+        .banks_client
+        .get_balance(context.payer.pubkey())
+        .await
+        .unwrap();
+    assert_eq!(
+        starting_rent_collector_balance + op_account_balance - 5000,
+        ending_rent_collector_balance
+    );
 }
 
 pub async fn approve_or_deny_n_of_n_multisig_op(
@@ -406,6 +590,7 @@ pub struct BalanceAccountTestContext {
 
 pub async fn setup_balance_account_tests(
     bpf_compute_max_units: Option<u64>,
+    add_extra_transfer_approver: bool,
 ) -> BalanceAccountTestContext {
     let program_owner = Keypair::new();
     let mut pt = ProgramTest::new(
@@ -465,6 +650,14 @@ pub async fn setup_balance_account_tests(
         BalanceAccountGuidHash::new(&hash_of(Uuid::new_v4().as_bytes()));
     let balance_account_name_hash = BalanceAccountNameHash::new(&hash_of(b"Account Name"));
 
+    let mut transfer_approvers = vec![
+        (SlotId::new(0), approvers[0].pubkey_as_signer()),
+        (SlotId::new(1), approvers[1].pubkey_as_signer()),
+    ];
+    if add_extra_transfer_approver {
+        transfer_approvers.append(&mut vec![(SlotId::new(2), approvers[2].pubkey_as_signer())])
+    }
+
     let init_transaction = Transaction::new_signed_with_payer(
         &[
             system_instruction::create_account(
@@ -483,10 +676,7 @@ pub async fn setup_balance_account_tests(
                 balance_account_name_hash,
                 2,
                 Duration::from_secs(1800),
-                vec![
-                    (SlotId::new(0), approvers[0].pubkey_as_signer()),
-                    (SlotId::new(1), approvers[1].pubkey_as_signer()),
-                ],
+                transfer_approvers.clone(),
                 vec![(SlotId::new(0), addr_book_entry)],
             ),
         ],
@@ -529,10 +719,7 @@ pub async fn setup_balance_account_tests(
         name_hash: balance_account_name_hash,
         approvals_required_for_transfer: 2,
         approval_timeout_for_transfer: Duration::from_secs(1800),
-        add_transfer_approvers: vec![
-            (SlotId::new(0), approvers[0].pubkey_as_signer()),
-            (SlotId::new(1), approvers[1].pubkey_as_signer()),
-        ],
+        add_transfer_approvers: transfer_approvers.clone(),
         remove_transfer_approvers: vec![],
         add_allowed_destinations: vec![(SlotId::new(0), addr_book_entry)],
         remove_allowed_destinations: vec![],
@@ -692,7 +879,7 @@ pub async fn finalize_balance_account_creation(context: &mut BalanceAccountTestC
 pub async fn setup_balance_account_tests_and_finalize(
     bpf_compute_max_units: Option<u64>,
 ) -> (BalanceAccountTestContext, Pubkey) {
-    let mut context = setup_balance_account_tests(bpf_compute_max_units).await;
+    let mut context = setup_balance_account_tests(bpf_compute_max_units, false).await;
 
     approve_or_deny_1_of_2_multisig_op(
         context.banks_client.borrow_mut(),
