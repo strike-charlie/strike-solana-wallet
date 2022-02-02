@@ -27,6 +27,8 @@ pub enum WalletError {
     InvalidDestinationTokenAccount,
     #[error("Invalid Token Mint Account")]
     InvalidTokenMintAccount,
+    #[error("Simulation Finished Successfully")]
+    SimulationFinished,
 }
 
 impl From<WalletError> for ProgramError {

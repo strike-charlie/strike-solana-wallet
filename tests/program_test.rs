@@ -20,7 +20,7 @@ use strike_wallet::error::WalletError;
 use strike_wallet::instruction::{
     finalize_balance_account_creation, finalize_balance_account_update, finalize_transfer,
     finalize_wallet_update, init_balance_account_update, init_update_signer, init_wallet_update,
-    set_approval_disposition, BalanceAccountUpdate,
+    set_approval_disposition, simulate_transfer, BalanceAccountUpdate,
 };
 use strike_wallet::model::address_book::{AddressBook, AddressBookEntry, AddressBookEntryNameHash};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
@@ -1701,6 +1701,91 @@ async fn test_transfer_sol() {
             .await
             .unwrap(),
         123
+    );
+}
+
+#[tokio::test]
+async fn test_simulate_transfer() {
+    let (mut context, balance_account) =
+        utils::setup_balance_account_tests_and_finalize(None).await;
+    let (multisig_op_account, result) =
+        utils::setup_transfer_test(context.borrow_mut(), &balance_account, None, None).await;
+    result.unwrap();
+
+    // transfer enough balance from fee payer to source account
+    context
+        .banks_client
+        .process_transaction(Transaction::new_signed_with_payer(
+            &[system_instruction::transfer(
+                &context.payer.pubkey(),
+                &balance_account,
+                1000,
+            )],
+            Some(&context.payer.pubkey()),
+            &[&context.payer],
+            context.recent_blockhash,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(balance_account)
+            .await
+            .unwrap(),
+        1000
+    );
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(context.destination.pubkey())
+            .await
+            .unwrap(),
+        0
+    );
+
+    assert_eq!(
+        context
+            .banks_client
+            .process_transaction(Transaction::new_signed_with_payer(
+                &[simulate_transfer(
+                    &context.program_owner.pubkey(),
+                    &multisig_op_account.pubkey(),
+                    &context.wallet_account.pubkey(),
+                    &balance_account,
+                    &context.destination.pubkey(),
+                    &context.payer.pubkey(),
+                    context.balance_account_guid_hash,
+                    123,
+                    &system_program::id(),
+                    None,
+                )],
+                Some(&context.payer.pubkey()),
+                &[&context.payer],
+                context.recent_blockhash,
+            ))
+            .await
+            .unwrap_err()
+            .unwrap(),
+        TransactionError::InstructionError(0, Custom(WalletError::SimulationFinished as u32)),
+    );
+
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(balance_account)
+            .await
+            .unwrap(),
+        1000
+    );
+    assert_eq!(
+        context
+            .banks_client
+            .get_balance(context.destination.pubkey())
+            .await
+            .unwrap(),
+        0
     );
 }
 

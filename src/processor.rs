@@ -117,6 +117,18 @@ impl Processor {
                 token_mint,
             ),
 
+            ProgramInstruction::SimulateTransfer {
+                account_guid_hash,
+                amount,
+                token_mint,
+            } => Self::handle_simulate_transfer(
+                program_id,
+                &accounts,
+                &account_guid_hash,
+                amount,
+                token_mint,
+            ),
+
             ProgramInstruction::SetApprovalDisposition {
                 disposition,
                 params_hash,
@@ -504,12 +516,56 @@ impl Processor {
         Ok(())
     }
 
+    fn handle_simulate_transfer(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        account_guid_hash: &BalanceAccountGuidHash,
+        amount: u64,
+        token_mint: Pubkey,
+    ) -> ProgramResult {
+        let starting_balances: Vec<u64> = accounts.iter().map(|a| a.lamports()).collect();
+        let ret = Self::simulate_or_finalize_transfer(
+            program_id,
+            accounts,
+            account_guid_hash,
+            amount,
+            token_mint,
+            true,
+        );
+
+        if let Ok(()) = ret {
+            let ending_balances: Vec<u64> = accounts.iter().map(|a| a.lamports()).collect();
+            msg!("SIM: {:?} -> {:?}", starting_balances, ending_balances);
+            Err(WalletError::SimulationFinished.into())
+        } else {
+            ret
+        }
+    }
+
     fn handle_finalize_transfer(
         program_id: &Pubkey,
         accounts: &[AccountInfo],
         account_guid_hash: &BalanceAccountGuidHash,
         amount: u64,
         token_mint: Pubkey,
+    ) -> ProgramResult {
+        return Self::simulate_or_finalize_transfer(
+            program_id,
+            accounts,
+            account_guid_hash,
+            amount,
+            token_mint,
+            false,
+        );
+    }
+
+    fn simulate_or_finalize_transfer(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        account_guid_hash: &BalanceAccountGuidHash,
+        amount: u64,
+        token_mint: Pubkey,
+        simulation: bool,
     ) -> ProgramResult {
         let accounts_iter = &mut accounts.iter();
         let multisig_op_account_info = Self::next_program_account_info(accounts_iter, program_id)?;
@@ -540,7 +596,7 @@ impl Processor {
             token_mint,
         };
 
-        if multisig_op.approved(&expected_params, &clock)? {
+        if simulation || multisig_op.approved(&expected_params, &clock)? {
             let bump_seed = Self::validate_balance_account_and_get_seed(
                 source_account,
                 account_guid_hash,

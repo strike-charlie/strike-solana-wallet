@@ -115,6 +115,12 @@ pub enum ProgramInstruction {
         token_mint: Pubkey,
     },
 
+    SimulateTransfer {
+        account_guid_hash: BalanceAccountGuidHash,
+        amount: u64,
+        token_mint: Pubkey,
+    },
+
     /// 0  `[writable]` The multisig operation account
     /// 1. `[]` The wallet account
     /// 2. `[writable]` The balance account
@@ -296,6 +302,17 @@ impl ProgramInstruction {
                 buf.push(slot_id.value as u8);
                 buf.extend_from_slice(signer.key.as_ref());
             }
+            &ProgramInstruction::SimulateTransfer {
+                ref account_guid_hash,
+                ref amount,
+                ref token_mint,
+            } => {
+                buf.push(14);
+                buf.extend_from_slice(account_guid_hash.to_bytes());
+                buf.extend_from_slice(&amount.to_le_bytes());
+                buf.extend_from_slice(&token_mint.to_bytes());
+                buf.push(0);
+            }
         }
         buf
     }
@@ -320,6 +337,7 @@ impl ProgramInstruction {
             11 => Self::unpack_finalize_wrap_unwrap_instruction(rest)?,
             12 => Self::unpack_init_update_signer(rest)?,
             13 => Self::unpack_finalize_update_signer(rest)?,
+            14 => Self::unpack_simulate_transfer_instruction(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -446,6 +464,25 @@ impl ProgramInstruction {
         bytes: &[u8],
     ) -> Result<ProgramInstruction, ProgramError> {
         Ok(Self::FinalizeTransfer {
+            account_guid_hash: unpack_account_guid_hash(bytes)?,
+            amount: bytes
+                .get(32..40)
+                .and_then(|slice| slice.try_into().ok())
+                .map(u64::from_le_bytes)
+                .ok_or(ProgramError::InvalidInstructionData)?,
+            token_mint: Pubkey::new_from_array(
+                bytes
+                    .get(40..72)
+                    .and_then(|slice| slice.try_into().ok())
+                    .ok_or(ProgramError::InvalidInstructionData)?,
+            ),
+        })
+    }
+
+    fn unpack_simulate_transfer_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::SimulateTransfer {
             account_guid_hash: unpack_account_guid_hash(bytes)?,
             amount: bytes
                 .get(32..40)
@@ -1037,6 +1074,39 @@ pub fn init_transfer(
     }
 }
 
+pub fn simulate_transfer(
+    program_id: &Pubkey,
+    multisig_op_account: &Pubkey,
+    wallet_account: &Pubkey,
+    source_account: &Pubkey,
+    destination_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    account_guid_hash: BalanceAccountGuidHash,
+    amount: u64,
+    token_mint: &Pubkey,
+    token_authority: Option<&Pubkey>,
+) -> Instruction {
+    let data = ProgramInstruction::SimulateTransfer {
+        account_guid_hash,
+        amount,
+        token_mint: *token_mint,
+    }
+    .borrow()
+    .pack();
+
+    return simulate_or_finalize_transfer(
+        program_id,
+        multisig_op_account,
+        wallet_account,
+        source_account,
+        destination_account,
+        rent_collector_account,
+        token_mint,
+        token_authority,
+        data,
+    );
+}
+
 pub fn finalize_transfer(
     program_id: &Pubkey,
     multisig_op_account: &Pubkey,
@@ -1056,6 +1126,30 @@ pub fn finalize_transfer(
     }
     .borrow()
     .pack();
+    return simulate_or_finalize_transfer(
+        program_id,
+        multisig_op_account,
+        wallet_account,
+        source_account,
+        destination_account,
+        rent_collector_account,
+        token_mint,
+        token_authority,
+        data,
+    );
+}
+
+fn simulate_or_finalize_transfer(
+    program_id: &Pubkey,
+    multisig_op_account: &Pubkey,
+    wallet_account: &Pubkey,
+    source_account: &Pubkey,
+    destination_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    token_mint: &Pubkey,
+    token_authority: Option<&Pubkey>,
+    data: Vec<u8>,
+) -> Instruction {
     let mut accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new_readonly(*wallet_account, false),
