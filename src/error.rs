@@ -31,6 +31,8 @@ pub enum WalletError {
     InvalidApprovalTimeout,
     #[error("Concurrent Operations Not Allowed")]
     ConcurrentOperationsNotAllowed,
+    #[error("Simulation Finished Successfully")]
+    SimulationFinished,
 }
 
 impl From<WalletError> for ProgramError {

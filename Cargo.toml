@@ -6,6 +6,7 @@ publish = false
 resolver = "2"
 
 [dependencies]
+bytes = "1.1.0"
 arrayref = "0.3.6"
 bitvec = "1.0"
 itertools = "0.10.3"

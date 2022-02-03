@@ -1,10 +1,12 @@
+use bytes::BufMut;
 use std::borrow::Borrow;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::mem::size_of;
 use std::slice::Iter;
 use std::time::Duration;
 
-use crate::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
+use bitvec::macros::internal::funty::Fundamental;
 use solana_program::hash::Hash;
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::Pack;
@@ -12,6 +14,7 @@ use solana_program::{
     instruction::AccountMeta, instruction::Instruction, pubkey::Pubkey, system_program, sysvar,
 };
 
+use crate::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
 use crate::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use crate::model::multisig_op::{ApprovalDisposition, SlotUpdateType, WrapDirection};
 use crate::model::signer::Signer;
@@ -23,18 +26,18 @@ pub enum ProgramInstruction {
     /// 1. `[signer]` The transaction assistant account
     InitWallet { update: WalletUpdate },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[]` The wallet account
     /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
     /// 3. `[]` The sysvar clock account
     InitWalletUpdate { update: WalletUpdate },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[writable]` The wallet account
     /// 2. `[signer]` The rent collector account
     FinalizeWalletUpdate { update: WalletUpdate },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[]` The wallet account
     /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
     /// 3. `[]` The sysvar clock account
@@ -43,7 +46,7 @@ pub enum ProgramInstruction {
         update: BalanceAccountUpdate,
     },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[writable]` The wallet account
     /// 2. `[signer]` The rent collector account
     FinalizeBalanceAccountCreation {
@@ -51,7 +54,7 @@ pub enum ProgramInstruction {
         update: BalanceAccountUpdate,
     },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[]` The wallet account
     /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
     /// 3. `[]` The sysvar clock account
@@ -60,7 +63,7 @@ pub enum ProgramInstruction {
         update: BalanceAccountUpdate,
     },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[writable]` The wallet account
     /// 2. `[signer]` The rent collector account
     /// 3. `[]` The sysvar clock account
@@ -69,7 +72,7 @@ pub enum ProgramInstruction {
         update: BalanceAccountUpdate,
     },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[]` The wallet account
     /// 2. `[writable]` The source account
     /// 3. `[]` The destination account
@@ -90,7 +93,7 @@ pub enum ProgramInstruction {
         destination_name_hash: AddressBookEntryNameHash,
     },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[signer]` The approver account
     /// 2. `[]` The sysvar clock account
     SetApprovalDisposition {
@@ -98,7 +101,7 @@ pub enum ProgramInstruction {
         params_hash: Hash,
     },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[]` The wallet account
     /// 2. `[writable]` The source account
     /// 3. `[writable]` The destination account
@@ -115,7 +118,7 @@ pub enum ProgramInstruction {
         token_mint: Pubkey,
     },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[]` The wallet account
     /// 2. `[writable]` The balance account
     /// 3. `[writable]` The associated wrapped SOL account
@@ -132,7 +135,7 @@ pub enum ProgramInstruction {
         direction: WrapDirection,
     },
 
-    /// 0  `[writable]` The multisig operation account
+    /// 0. `[writable]` The multisig operation account
     /// 1. `[]` The wallet account
     /// 2. `[writable]` The balance account
     /// 3. `[]` The system program
@@ -145,8 +148,8 @@ pub enum ProgramInstruction {
         amount: u64,
         direction: WrapDirection,
     },
-    /// 0  `[writable]` The multisig operation account
-    /// 1. `[]` The program config account
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[]` The wallet account
     /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
     /// 3. `[]` The sysvar clock account
     InitUpdateSigner {
@@ -155,8 +158,8 @@ pub enum ProgramInstruction {
         signer: Signer,
     },
 
-    /// 0  `[writable]` The multisig operation account
-    /// 1. `[writable]` The program config account
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[writable]` The wallet account
     /// 2. `[signer]` The rent collector account
     FinalizeUpdateSigner {
         slot_update_type: SlotUpdateType,
@@ -174,6 +177,25 @@ pub enum ProgramInstruction {
     /// 1. `[writable]` The wallet account
     /// 2. `[signer]` The rent collector account
     FinalizeWalletConfigPolicyUpdate { update: WalletConfigPolicyUpdate },
+
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[]` The wallet account
+    /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 3. `[]` The sysvar clock account
+    InitDAppTransaction {
+        account_guid_hash: BalanceAccountGuidHash,
+        instructions: Vec<Instruction>,
+    },
+
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[]` The wallet account
+    /// 2. `[writable]` The balance account
+    /// 3. `[signer]` The rent collector account
+    /// 4. `[]` The sysvar clock account
+    FinalizeDAppTransaction {
+        account_guid_hash: BalanceAccountGuidHash,
+        instructions: Vec<Instruction>,
+    },
 }
 
 impl ProgramInstruction {
@@ -319,6 +341,28 @@ impl ProgramInstruction {
                 buf.push(15);
                 buf.extend_from_slice(&update_bytes);
             }
+            &ProgramInstruction::InitDAppTransaction {
+                ref account_guid_hash,
+                ref instructions,
+            } => {
+                buf.push(16);
+                buf.extend_from_slice(&account_guid_hash.to_bytes());
+                buf.push(instructions.len() as u8);
+                for instruction in instructions.iter() {
+                    append_instruction(instruction, &mut buf);
+                }
+            }
+            &ProgramInstruction::FinalizeDAppTransaction {
+                ref account_guid_hash,
+                ref instructions,
+            } => {
+                buf.push(17);
+                buf.extend_from_slice(&account_guid_hash.to_bytes());
+                buf.push(instructions.len() as u8);
+                for instruction in instructions.iter() {
+                    append_instruction(instruction, &mut buf);
+                }
+            }
         }
         buf
     }
@@ -345,6 +389,8 @@ impl ProgramInstruction {
             13 => Self::unpack_finalize_update_signer_instruction(rest)?,
             14 => Self::unpack_init_wallet_config_policy_update_instruction(rest)?,
             15 => Self::unpack_finalize_wallet_config_policy_update_instruction(rest)?,
+            16 => Self::unpack_init_dapp_transaction(rest)?,
+            17 => Self::unpack_finalize_dapp_transaction(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -569,6 +615,28 @@ impl ProgramInstruction {
             update: WalletConfigPolicyUpdate::unpack(bytes)?,
         })
     }
+
+    fn unpack_init_dapp_transaction(bytes: &[u8]) -> Result<ProgramInstruction, ProgramError> {
+        let iter = &mut bytes.into_iter();
+        let account_guid_hash = unpack_account_guid_hash(
+            read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
+        )?;
+        Ok(Self::InitDAppTransaction {
+            account_guid_hash,
+            instructions: read_instructions(iter)?,
+        })
+    }
+
+    fn unpack_finalize_dapp_transaction(bytes: &[u8]) -> Result<ProgramInstruction, ProgramError> {
+        let iter = &mut bytes.into_iter();
+        let account_guid_hash = unpack_account_guid_hash(
+            read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
+        )?;
+        Ok(Self::FinalizeDAppTransaction {
+            account_guid_hash,
+            instructions: read_instructions(iter)?,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -712,6 +780,10 @@ fn read_u8<'a>(iter: &'a mut Iter<u8>) -> Option<&'a u8> {
     iter.next()
 }
 
+fn read_u32(iter: &mut Iter<u8>) -> Option<u32> {
+    read_fixed_size_array::<4>(iter).map(|slice| u32::from_le_bytes(*slice))
+}
+
 fn read_fixed_size_array<'a, const SIZE: usize>(iter: &'a mut Iter<u8>) -> Option<&'a [u8; SIZE]> {
     read_slice(iter, SIZE).and_then(|slice| slice.try_into().ok())
 }
@@ -754,6 +826,64 @@ fn append_signers(signers: &Vec<(SlotId<Signer>, Signer)>, dst: &mut Vec<u8>) {
         signer.pack_into_slice(&mut buf[1..1 + Signer::LEN]);
         dst.extend_from_slice(buf.as_slice());
     }
+}
+
+fn read_instructions(iter: &mut Iter<u8>) -> Result<Vec<Instruction>, ProgramError> {
+    let instruction_count = *read_u8(iter).ok_or(ProgramError::InvalidInstructionData)?;
+    Ok((0..instruction_count)
+        .map(|_| read_instruction(iter).unwrap())
+        .collect())
+}
+
+fn read_instruction(iter: &mut Iter<u8>) -> Result<Instruction, ProgramError> {
+    let program_id = Pubkey::new(
+        read_slice(iter, 32)
+            .ok_or(ProgramError::InvalidInstructionData)?
+            .into(),
+    );
+    let account_count = *read_u8(iter).ok_or(ProgramError::InvalidInstructionData)?;
+    let accounts = (0..account_count)
+        .map(|_| {
+            let flags = *read_u8(iter)
+                .ok_or(ProgramError::InvalidInstructionData)
+                .unwrap();
+            let pubkey = Pubkey::new(
+                read_slice(iter, 32)
+                    .ok_or(ProgramError::InvalidInstructionData)
+                    .unwrap()
+                    .try_into()
+                    .ok()
+                    .unwrap(),
+            );
+            AccountMeta {
+                is_writable: (flags & 1) == 1,
+                is_signer: (flags & 2) == 2,
+                pubkey,
+            }
+        })
+        .collect();
+    let data_len = read_u32(iter).ok_or(ProgramError::InvalidInstructionData)?;
+    let data = read_slice(iter, data_len.try_into().unwrap())
+        .ok_or(ProgramError::InvalidInstructionData)?
+        .to_vec();
+    Ok(Instruction {
+        program_id,
+        accounts,
+        data,
+    })
+}
+
+pub fn append_instruction(instruction: &Instruction, dst: &mut Vec<u8>) {
+    dst.extend_from_slice(instruction.program_id.as_ref());
+    dst.push(instruction.accounts.len() as u8);
+    for account in instruction.accounts.iter() {
+        let mut buf = vec![0; 1 + Signer::LEN];
+        buf[0] = (account.is_signer.as_u8() << 1) + account.is_writable.as_u8();
+        Signer::new(account.pubkey).pack_into_slice(&mut buf[1..1 + Signer::LEN]);
+        dst.extend_from_slice(buf.as_slice());
+    }
+    dst.put_u32_le(instruction.data.len().as_u32());
+    dst.extend_from_slice(instruction.data.as_slice());
 }
 
 fn read_address_book_entries(
@@ -1259,7 +1389,7 @@ pub fn finalize_wrap_unwrap(
 
 pub fn init_update_signer(
     program_id: &Pubkey,
-    program_config_account: &Pubkey,
+    wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
     assistant_account: &Pubkey,
     slot_update_type: SlotUpdateType,
@@ -1275,7 +1405,7 @@ pub fn init_update_signer(
     .pack();
     init_multisig_op(
         program_id,
-        program_config_account,
+        wallet_account,
         multisig_op_account,
         assistant_account,
         data,
@@ -1284,7 +1414,7 @@ pub fn init_update_signer(
 
 pub fn finalize_update_signer(
     program_id: &Pubkey,
-    program_config_account: &Pubkey,
+    wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
     rent_collector_account: &Pubkey,
     slot_update_type: SlotUpdateType,
@@ -1301,7 +1431,7 @@ pub fn finalize_update_signer(
 
     let accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
-        AccountMeta::new(*program_config_account, false),
+        AccountMeta::new(*wallet_account, false),
         AccountMeta::new_readonly(*rent_collector_account, true),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
@@ -1356,5 +1486,103 @@ pub fn finalize_wallet_config_policy_update(
         }
         .borrow()
         .pack(),
+    }
+}
+
+pub fn init_dapp_transaction(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    assistant_account: &Pubkey,
+    account_guid_hash: &BalanceAccountGuidHash,
+    instructions: Vec<Instruction>,
+) -> Instruction {
+    let data = ProgramInstruction::InitDAppTransaction {
+        account_guid_hash: *account_guid_hash,
+        instructions,
+    }
+    .borrow()
+    .pack();
+
+    let accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new_readonly(*wallet_account, false),
+        AccountMeta::new_readonly(*assistant_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+    ];
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn finalize_dapp_transaction(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    balance_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    account_guid_hash: &BalanceAccountGuidHash,
+    instructions: &Vec<Instruction>,
+) -> Instruction {
+    let data = ProgramInstruction::FinalizeDAppTransaction {
+        account_guid_hash: *account_guid_hash,
+        instructions: instructions.clone(),
+    }
+    .borrow()
+    .pack();
+
+    // the accounts below are expected below in this order by finalize
+    let mut accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new_readonly(*wallet_account, false),
+        AccountMeta::new(*balance_account, false),
+        AccountMeta::new(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+    ];
+
+    // we also need to include any accounts referenced by the dapp instructions, but we don't
+    // want to repeat keys, so we'll use a BTreeMap to keep track of the ones we've already seen
+    let keys_to_skip = vec![
+        *multisig_op_account,
+        *wallet_account,
+        *balance_account,
+        *rent_collector_account,
+        sysvar::clock::id(),
+    ];
+
+    let mut accounts_by_key: BTreeMap<&Pubkey, AccountMeta> = BTreeMap::new();
+
+    for instruction in instructions.iter() {
+        accounts_by_key.insert(
+            &instruction.program_id,
+            AccountMeta {
+                pubkey: instruction.program_id,
+                is_writable: false,
+                is_signer: false,
+            },
+        );
+        for account in instruction.accounts.iter() {
+            if !keys_to_skip.contains(&account.pubkey) {
+                if accounts_by_key.contains_key(&account.pubkey) {
+                    // if the account was already in the map, make sure we do not downgrade its
+                    // permissions
+                    let meta = accounts_by_key.get_mut(&account.pubkey).unwrap();
+                    meta.is_writable |= account.is_writable;
+                    meta.is_signer |= account.is_signer
+                } else {
+                    accounts_by_key.insert(&account.pubkey, account.clone());
+                }
+            }
+        }
+    }
+    accounts.extend(accounts_by_key.values().into_iter().cloned());
+
+    Instruction {
+        program_id: *program_id,
+        accounts: accounts,
+        data,
     }
 }

@@ -1,14 +1,18 @@
 use crate::error::WalletError;
-use crate::instruction::{BalanceAccountUpdate, WalletConfigPolicyUpdate, WalletUpdate};
+use crate::instruction::{
+    append_instruction, BalanceAccountUpdate, WalletConfigPolicyUpdate, WalletUpdate,
+};
 use crate::model::balance_account::BalanceAccountGuidHash;
 use crate::model::signer::Signer;
 use crate::model::wallet::Wallet;
 use crate::utils::SlotId;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
+use bitvec::macros::internal::funty::Fundamental;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
 use solana_program::entrypoint::ProgramResult;
 use solana_program::hash::{hash, Hash};
+use solana_program::instruction::Instruction;
 use solana_program::msg;
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{IsInitialized, Pack, Sealed};
@@ -376,7 +380,7 @@ impl Pack for MultisigOp {
 }
 
 // represents multisig operation params that are hashed and signed by the client
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum MultisigOpParams {
     UpdateWallet {
         wallet_address: Pubkey,
@@ -414,6 +418,11 @@ pub enum MultisigOpParams {
     UpdateWalletConfigPolicy {
         wallet_address: Pubkey,
         update: WalletConfigPolicyUpdate,
+    },
+    DAppTransaction {
+        wallet_address: Pubkey,
+        account_guid_hash: BalanceAccountGuidHash,
+        instructions: Vec<Instruction>,
     },
 }
 
@@ -537,6 +546,22 @@ impl MultisigOpParams {
                 bytes[33] = slot_update_type.to_u8();
                 bytes[34] = slot_id.value as u8;
                 bytes[35..67].copy_from_slice(signer.key.as_ref());
+                hash(&bytes)
+            }
+            MultisigOpParams::DAppTransaction {
+                wallet_address,
+                account_guid_hash,
+                instructions,
+            } => {
+                let mut bytes: Vec<u8> = Vec::new();
+                bytes.push(7);
+                bytes.extend_from_slice(&wallet_address.to_bytes());
+                bytes.extend_from_slice(&account_guid_hash.to_bytes());
+                bytes.extend_from_slice(instructions.len().as_u32().to_le_bytes().as_ref());
+                for instruction in instructions.into_iter() {
+                    append_instruction(instruction, &mut bytes);
+                }
+
                 hash(&bytes)
             }
             MultisigOpParams::UpdateWalletConfigPolicy {
