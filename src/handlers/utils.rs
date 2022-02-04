@@ -1,4 +1,5 @@
 use crate::error::WalletError;
+use crate::model::balance_account::BalanceAccountGuidHash;
 use solana_program::account_info::{next_account_info, AccountInfo};
 use solana_program::clock::Clock;
 use solana_program::entrypoint::ProgramResult;
@@ -48,4 +49,18 @@ pub fn calculate_expires(start: i64, duration: Duration) -> Result<i64, ProgramE
         return Err(ProgramError::InvalidArgument);
     }
     Ok(expires_at.unwrap())
+}
+
+pub fn validate_balance_account_and_get_seed(
+    balance_account: &AccountInfo,
+    account_guid_hash: &BalanceAccountGuidHash,
+    program_id: &Pubkey,
+) -> Result<u8, ProgramError> {
+    let (account_pda, bump_seed) =
+        Pubkey::find_program_address(&[&account_guid_hash.to_bytes()], program_id);
+    if &account_pda != balance_account.key {
+        Err(WalletError::InvalidSourceAccount.into())
+    } else {
+        Ok(bump_seed)
+    }
 }

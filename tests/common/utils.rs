@@ -1,3 +1,8 @@
+use crate::common::instructions;
+use crate::common::instructions::{
+    finalize_update_signer, init_balance_account_creation, init_transfer, init_update_signer,
+    init_wallet_update, set_approval_disposition,
+};
 use arrayref::array_ref;
 use itertools::Itertools;
 use sha2::{Digest, Sha256};
@@ -13,11 +18,7 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strike_wallet::instruction;
-use strike_wallet::instruction::{
-    finalize_update_signer, init_balance_account_creation, init_transfer, init_update_signer,
-    init_wallet_update, set_approval_disposition, BalanceAccountUpdate, WalletConfigPolicyUpdate,
-    WalletUpdate,
-};
+use strike_wallet::instruction::{BalanceAccountUpdate, WalletConfigPolicyUpdate, WalletUpdate};
 use strike_wallet::model::address_book::{AddressBook, AddressBookEntry, AddressBookEntryNameHash};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
@@ -209,7 +210,7 @@ pub async fn init_wallet_config_policy_update(
     let multisig_op_keypair = Keypair::new();
     let multisig_op_pubkey = multisig_op_keypair.pubkey();
 
-    let instruction = instruction::init_wallet_config_policy_update(
+    let instruction = instructions::init_wallet_config_policy_update(
         test_context.program_id,
         wallet_account,
         multisig_op_pubkey,
@@ -231,7 +232,7 @@ pub async fn finalize_wallet_config_policy_update(
     finalize_multisig_op(
         test_context,
         multisig_op_account,
-        instruction::finalize_wallet_config_policy_update(
+        instructions::finalize_wallet_config_policy_update(
             test_context.program_id,
             wallet_account,
             multisig_op_account,
@@ -278,7 +279,7 @@ pub async fn init_wallet(
                 Wallet::LEN as u64,
                 &program_id,
             ),
-            instruction::init_wallet(
+            instructions::init_wallet(
                 &program_id,
                 &wallet_account.pubkey(),
                 &assistant_account.pubkey(),
@@ -1056,7 +1057,7 @@ pub async fn setup_create_balance_account_failure_tests(
 
 pub async fn finalize_balance_account_creation(context: &mut BalanceAccountTestContext) {
     let finalize_transaction = Transaction::new_signed_with_payer(
-        &[instruction::finalize_balance_account_creation(
+        &[instructions::finalize_balance_account_creation(
             &context.program_id,
             &context.wallet_account.pubkey(),
             &context.multisig_op_account.pubkey(),
@@ -1378,7 +1379,7 @@ pub async fn process_wrap(
                     MultisigOp::LEN as u64,
                     &context.program_id,
                 ),
-                instruction::init_wrap_unwrap(
+                instructions::init_wrap_unwrap(
                     &context.program_id,
                     &context.wallet_account.pubkey(),
                     &multisig_op_account.pubkey(),
@@ -1432,7 +1433,7 @@ pub async fn process_wrap(
     context
         .banks_client
         .process_transaction(Transaction::new_signed_with_payer(
-            &[instruction::finalize_wrap_unwrap(
+            &[instructions::finalize_wrap_unwrap(
                 &context.program_id,
                 &multisig_op_account.pubkey(),
                 &context.wallet_account.pubkey(),
@@ -1468,7 +1469,7 @@ pub async fn process_unwrapping(
                     MultisigOp::LEN as u64,
                     &context.program_id,
                 ),
-                instruction::init_wrap_unwrap(
+                instructions::init_wrap_unwrap(
                     &context.program_id,
                     &context.wallet_account.pubkey(),
                     &unwrap_multisig_op_account.pubkey(),
@@ -1505,7 +1506,7 @@ pub async fn process_unwrapping(
     context
         .banks_client
         .process_transaction(Transaction::new_signed_with_payer(
-            &[instruction::finalize_wrap_unwrap(
+            &[instructions::finalize_wrap_unwrap(
                 &context.program_id,
                 &unwrap_multisig_op_account.pubkey(),
                 &context.wallet_account.pubkey(),
