@@ -116,9 +116,17 @@ fn balance_changes_from_simulation(
                     .unwrap()
                     .as_u8();
                 if end.balance > starting_balance {
-                    Some((index, '+', end.balance - starting_balance))
+                    Some((
+                        index,
+                        '+',
+                        end.balance.checked_sub(starting_balance).unwrap(),
+                    ))
                 } else {
-                    Some((index, '-', starting_balance - end.balance))
+                    Some((
+                        index,
+                        '-',
+                        starting_balance.checked_sub(end.balance).unwrap(),
+                    ))
                 }
             }
         })
