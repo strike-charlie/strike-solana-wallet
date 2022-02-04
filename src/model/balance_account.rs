@@ -1,4 +1,5 @@
 use crate::model::address_book::{AddressBook, AddressBookEntry};
+use crate::model::multisig_op::WhitelistStatus;
 use crate::model::wallet::Approvers;
 use crate::utils::SlotFlags;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
@@ -50,6 +51,7 @@ pub struct BalanceAccount {
     pub approval_timeout_for_transfer: Duration,
     pub transfer_approvers: Approvers,
     pub allowed_destinations: AllowedDestinations,
+    pub whitelist_status: WhitelistStatus,
 }
 
 impl Sealed for BalanceAccount {}
@@ -60,7 +62,8 @@ impl Pack for BalanceAccount {
         1 + // approvals_required_for_transfer
         8 + // approval_timeout_for_transfer
         Approvers::STORAGE_SIZE + // transfer approvers
-        AllowedDestinations::STORAGE_SIZE; // allowed destinations
+        AllowedDestinations::STORAGE_SIZE +  // allowed destinations
+        1; // whitelist status
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let dst = array_mut_ref![dst, 0, BalanceAccount::LEN];
@@ -71,6 +74,7 @@ impl Pack for BalanceAccount {
             approval_timeout_for_transfer_dst,
             approvers_dst,
             allowed_destinations_dst,
+            whitelist_status_dst,
         ) = mut_array_refs![
             dst,
             32,
@@ -78,7 +82,8 @@ impl Pack for BalanceAccount {
             1,
             8,
             Approvers::STORAGE_SIZE,
-            AllowedDestinations::STORAGE_SIZE
+            AllowedDestinations::STORAGE_SIZE,
+            1
         ];
 
         guid_hash_dst.copy_from_slice(&self.guid_hash.0);
@@ -90,6 +95,7 @@ impl Pack for BalanceAccount {
 
         approvers_dst.copy_from_slice(self.transfer_approvers.as_bytes());
         allowed_destinations_dst.copy_from_slice(self.allowed_destinations.as_bytes());
+        whitelist_status_dst[0] = self.whitelist_status.to_u8()
     }
 
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
@@ -101,6 +107,7 @@ impl Pack for BalanceAccount {
             approval_timeout_for_transfer_src,
             approvers_src,
             allowed_destinations_src,
+            whitelist_status_src,
         ) = array_refs![
             src,
             32,
@@ -108,7 +115,8 @@ impl Pack for BalanceAccount {
             1,
             8,
             Approvers::STORAGE_SIZE,
-            AllowedDestinations::STORAGE_SIZE
+            AllowedDestinations::STORAGE_SIZE,
+            1
         ];
 
         Ok(BalanceAccount {
@@ -120,6 +128,17 @@ impl Pack for BalanceAccount {
             )),
             transfer_approvers: Approvers::new(*approvers_src),
             allowed_destinations: AllowedDestinations::new(*allowed_destinations_src),
+            whitelist_status: WhitelistStatus::from_u8(whitelist_status_src[0]),
         })
+    }
+}
+
+impl BalanceAccount {
+    pub fn whitelist_disabled(&self) -> bool {
+        return self.whitelist_status == WhitelistStatus::Off;
+    }
+
+    pub fn has_whitelisted_destinations(&self) -> bool {
+        return self.allowed_destinations.count_enabled() > 0;
     }
 }

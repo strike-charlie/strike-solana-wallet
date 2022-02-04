@@ -1,10 +1,13 @@
 use crate::error::WalletError;
-use crate::model::balance_account::BalanceAccountGuidHash;
+use crate::model::balance_account::{BalanceAccount, BalanceAccountGuidHash};
+use crate::model::multisig_op::{MultisigOp, MultisigOpParams};
+use crate::model::wallet::Wallet;
 use solana_program::account_info::{next_account_info, AccountInfo};
 use solana_program::clock::Clock;
 use solana_program::entrypoint::ProgramResult;
 use solana_program::msg;
 use solana_program::program_error::ProgramError;
+use solana_program::program_pack::Pack;
 use solana_program::pubkey::Pubkey;
 use solana_program::sysvar::Sysvar;
 use std::slice::Iter;
@@ -63,4 +66,70 @@ pub fn validate_balance_account_and_get_seed(
     } else {
         Ok(bump_seed)
     }
+}
+
+pub fn start_multisig_transfer_op(
+    multisig_op_account_info: &AccountInfo,
+    wallet: &Wallet,
+    balance_account: &BalanceAccount,
+    clock: Clock,
+    params: MultisigOpParams,
+) -> ProgramResult {
+    let mut multisig_op = MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
+
+    multisig_op.init(
+        wallet.get_transfer_approvers_keys(balance_account),
+        balance_account.approvals_required_for_transfer,
+        clock.unix_timestamp,
+        calculate_expires(clock.unix_timestamp, wallet.approval_timeout_for_config)?,
+        params,
+    )?;
+    MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
+
+    Ok(())
+}
+
+pub fn start_multisig_config_op(
+    multisig_op_account_info: &AccountInfo,
+    wallet: &Wallet,
+    clock: Clock,
+    params: MultisigOpParams,
+) -> ProgramResult {
+    let mut multisig_op = MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
+
+    multisig_op.init(
+        wallet.get_config_approvers_keys(),
+        wallet.approvals_required_for_config,
+        clock.unix_timestamp,
+        calculate_expires(clock.unix_timestamp, wallet.approval_timeout_for_config)?,
+        params,
+    )?;
+    MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
+
+    Ok(())
+}
+
+pub fn finalize_multisig_op<F>(
+    multisig_op_account_info: &AccountInfo,
+    account_to_return_rent_to: &AccountInfo,
+    clock: Clock,
+    expected_params: MultisigOpParams,
+    mut on_op_approved: F,
+) -> ProgramResult
+where
+    F: FnMut() -> ProgramResult,
+{
+    if !account_to_return_rent_to.is_signer {
+        return Err(ProgramError::MissingRequiredSignature);
+    }
+
+    let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
+
+    if multisig_op.approved(&expected_params, &clock)? {
+        on_op_approved()?
+    }
+
+    collect_remaining_balance(&multisig_op_account_info, &account_to_return_rent_to)?;
+
+    Ok(())
 }

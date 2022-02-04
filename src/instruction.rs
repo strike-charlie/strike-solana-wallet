@@ -12,7 +12,9 @@ use solana_program::{instruction::AccountMeta, instruction::Instruction, pubkey:
 
 use crate::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
 use crate::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
-use crate::model::multisig_op::{ApprovalDisposition, SlotUpdateType, WrapDirection};
+use crate::model::multisig_op::{
+    ApprovalDisposition, SlotUpdateType, WhitelistStatus, WrapDirection,
+};
 use crate::model::signer::Signer;
 use crate::utils::SlotId;
 
@@ -192,6 +194,22 @@ pub enum ProgramInstruction {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,
     },
+    /// 0  `[writable]` The multisig operation account
+    /// 1. `[]` The program config account
+    /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 3. `[]` The sysvar clock account
+    InitWhitelistStatusUpdate {
+        account_guid_hash: BalanceAccountGuidHash,
+        status: WhitelistStatus,
+    },
+
+    /// 0  `[writable]` The multisig operation account
+    /// 1. `[writable]` The program config account
+    /// 2. `[signer]` The rent collector account
+    FinalizeWhitelistStatusUpdate {
+        account_guid_hash: BalanceAccountGuidHash,
+        status: WhitelistStatus,
+    },
 }
 
 impl ProgramInstruction {
@@ -359,6 +377,22 @@ impl ProgramInstruction {
                     append_instruction(instruction, &mut buf);
                 }
             }
+            &ProgramInstruction::InitWhitelistStatusUpdate {
+                ref account_guid_hash,
+                ref status,
+            } => {
+                buf.push(18);
+                buf.extend_from_slice(&account_guid_hash.to_bytes());
+                buf.push(status.to_u8());
+            }
+            &ProgramInstruction::FinalizeWhitelistStatusUpdate {
+                ref account_guid_hash,
+                ref status,
+            } => {
+                buf.push(19);
+                buf.extend_from_slice(&account_guid_hash.to_bytes());
+                buf.push(status.to_u8());
+            }
         }
         buf
     }
@@ -367,7 +401,6 @@ impl ProgramInstruction {
         let (tag, rest) = input
             .split_first()
             .ok_or(ProgramError::InvalidInstructionData)?;
-
         Ok(match tag {
             0 => Self::unpack_init_wallet_instruction(rest)?,
             1 => Self::unpack_init_wallet_update_instruction(rest)?,
@@ -387,6 +420,8 @@ impl ProgramInstruction {
             15 => Self::unpack_finalize_wallet_config_policy_update_instruction(rest)?,
             16 => Self::unpack_init_dapp_transaction_instruction(rest)?,
             17 => Self::unpack_finalize_dapp_transaction_instruction(rest)?,
+            18 => Self::unpack_init_whitelist_status_update_instruction(rest)?,
+            19 => Self::unpack_finalize_whitelist_status_update_instruction(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -635,6 +670,24 @@ impl ProgramInstruction {
         Ok(Self::FinalizeDAppTransaction {
             account_guid_hash,
             instructions: read_instructions(iter)?,
+        })
+    }
+
+    fn unpack_init_whitelist_status_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::InitWhitelistStatusUpdate {
+            account_guid_hash: unpack_account_guid_hash(bytes)?,
+            status: WhitelistStatus::from_u8(bytes[32]),
+        })
+    }
+
+    fn unpack_finalize_whitelist_status_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::FinalizeWhitelistStatusUpdate {
+            account_guid_hash: unpack_account_guid_hash(bytes)?,
+            status: WhitelistStatus::from_u8(bytes[32]),
         })
     }
 }

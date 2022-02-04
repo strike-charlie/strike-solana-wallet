@@ -18,10 +18,10 @@ use spl_token::state::{Account as SPLAccount, Account};
 use crate::error::WalletError;
 use crate::handlers::dapp_transaction_handler;
 use crate::handlers::utils::{
-    calculate_expires, collect_remaining_balance, get_clock_from_next_account,
-    next_program_account_info, validate_balance_account_and_get_seed,
+    finalize_multisig_op, get_clock_from_next_account, next_program_account_info,
+    start_multisig_config_op, start_multisig_transfer_op, validate_balance_account_and_get_seed,
 };
-use crate::handlers::wallet_config_policy_update_handler;
+use crate::handlers::{wallet_config_policy_update_handler, whitelist_status_update_handler};
 use crate::instruction::{BalanceAccountUpdate, ProgramInstruction, WalletUpdate};
 use crate::model::address_book::AddressBookEntryNameHash;
 use crate::model::balance_account::BalanceAccountGuidHash;
@@ -199,6 +199,26 @@ impl Processor {
                 account_guid_hash,
                 instructions,
             ),
+
+            ProgramInstruction::InitWhitelistStatusUpdate {
+                account_guid_hash,
+                status,
+            } => whitelist_status_update_handler::init(
+                program_id,
+                &accounts,
+                &account_guid_hash,
+                status,
+            ),
+
+            ProgramInstruction::FinalizeWhitelistStatusUpdate {
+                account_guid_hash,
+                status,
+            } => whitelist_status_update_handler::finalize(
+                program_id,
+                &accounts,
+                &account_guid_hash,
+                status,
+            ),
         }
     }
 
@@ -242,22 +262,15 @@ impl Processor {
         wallet.validate_config_initiator(initiator_account_info)?;
         wallet.validate_update(update)?;
 
-        let mut multisig_op =
-            MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
-
-        multisig_op.init(
-            wallet.get_config_approvers_keys(),
-            wallet.approvals_required_for_config,
-            clock.unix_timestamp,
-            calculate_expires(clock.unix_timestamp, wallet.approval_timeout_for_config)?,
+        start_multisig_config_op(
+            &multisig_op_account_info,
+            &wallet,
+            clock,
             MultisigOpParams::UpdateWallet {
                 wallet_address: *wallet_account_info.key,
                 update: update.clone(),
             },
-        )?;
-        MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
-
-        Ok(())
+        )
     }
 
     fn handle_finalize_wallet_update(
@@ -271,26 +284,21 @@ impl Processor {
         let account_to_return_rent_to = next_account_info(accounts_iter)?;
         let clock = get_clock_from_next_account(accounts_iter)?;
 
-        if !account_to_return_rent_to.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
-
-        let expected_params = MultisigOpParams::UpdateWallet {
-            wallet_address: *wallet_account_info.key,
-            update: update.clone(),
-        };
-
-        if multisig_op.approved(&expected_params, &clock)? {
-            let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow_mut())?;
-            wallet.update(update)?;
-            Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
-        }
-
-        collect_remaining_balance(&multisig_op_account_info, &account_to_return_rent_to)?;
-
-        Ok(())
+        finalize_multisig_op(
+            &multisig_op_account_info,
+            &account_to_return_rent_to,
+            clock,
+            MultisigOpParams::UpdateWallet {
+                wallet_address: *wallet_account_info.key,
+                update: update.clone(),
+            },
+            || -> ProgramResult {
+                let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow_mut())?;
+                wallet.update(update)?;
+                Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
+                Ok(())
+            },
+        )
     }
 
     fn handle_init_balance_account_creation(
@@ -305,26 +313,20 @@ impl Processor {
         let initiator_account_info = next_account_info(accounts_iter)?;
         let clock = get_clock_from_next_account(accounts_iter)?;
 
-        let mut multisig_op =
-            MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
         let wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
         wallet.validate_config_initiator(initiator_account_info)?;
         wallet.validate_add_balance_account(account_guid_hash, update)?;
 
-        multisig_op.init(
-            wallet.get_config_approvers_keys(),
-            wallet.approvals_required_for_config,
-            clock.unix_timestamp,
-            calculate_expires(clock.unix_timestamp, wallet.approval_timeout_for_config)?,
+        start_multisig_config_op(
+            &multisig_op_account_info,
+            &wallet,
+            clock,
             MultisigOpParams::CreateBalanceAccount {
                 account_guid_hash: *account_guid_hash,
                 wallet_address: *wallet_account_info.key,
                 update: update.clone(),
             },
-        )?;
-        MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
-
-        Ok(())
+        )
     }
 
     fn handle_finalize_balance_account_creation(
@@ -339,27 +341,22 @@ impl Processor {
         let rent_collector_account_info = next_account_info(accounts_iter)?;
         let clock = get_clock_from_next_account(accounts_iter)?;
 
-        if !rent_collector_account_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
-        let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow_mut())?;
-
-        let expected_params = MultisigOpParams::CreateBalanceAccount {
-            account_guid_hash: *account_guid_hash,
-            wallet_address: *wallet_account_info.key,
-            update: update.clone(),
-        };
-
-        if multisig_op.approved(&expected_params, &clock)? {
-            wallet.add_balance_account(account_guid_hash, update)?;
-            Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
-        }
-
-        collect_remaining_balance(&multisig_op_account_info, &rent_collector_account_info)?;
-
-        Ok(())
+        finalize_multisig_op(
+            &multisig_op_account_info,
+            &rent_collector_account_info,
+            clock,
+            MultisigOpParams::CreateBalanceAccount {
+                account_guid_hash: *account_guid_hash,
+                wallet_address: *wallet_account_info.key,
+                update: update.clone(),
+            },
+            || -> ProgramResult {
+                let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
+                wallet.add_balance_account(account_guid_hash, update)?;
+                Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
+                Ok(())
+            },
+        )
     }
 
     fn handle_init_balance_account_update(
@@ -378,22 +375,16 @@ impl Processor {
         wallet.validate_config_initiator(initiator_account_info)?;
         wallet.validate_balance_account_update(account_guid_hash, update)?;
 
-        let mut multisig_op =
-            MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
-        multisig_op.init(
-            wallet.get_config_approvers_keys(),
-            wallet.approvals_required_for_config,
-            clock.unix_timestamp,
-            calculate_expires(clock.unix_timestamp, wallet.approval_timeout_for_config)?,
+        start_multisig_config_op(
+            &multisig_op_account_info,
+            &wallet,
+            clock,
             MultisigOpParams::UpdateBalanceAccount {
                 wallet_address: *wallet_account_info.key,
                 account_guid_hash: *account_guid_hash,
                 update: update.clone(),
             },
-        )?;
-        MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
-
-        Ok(())
+        )
     }
 
     fn handle_finalize_balance_account_update(
@@ -408,26 +399,22 @@ impl Processor {
         let rent_collector_account_info = next_account_info(accounts_iter)?;
         let clock = get_clock_from_next_account(accounts_iter)?;
 
-        if !rent_collector_account_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
-
-        let expected_params = MultisigOpParams::UpdateBalanceAccount {
-            account_guid_hash: *account_guid_hash,
-            wallet_address: *wallet_account_info.key,
-            update: update.clone(),
-        };
-        if multisig_op.approved(&expected_params, &clock)? {
-            let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
-            wallet.update_balance_account(account_guid_hash, update)?;
-            Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
-        }
-
-        collect_remaining_balance(&multisig_op_account_info, &rent_collector_account_info)?;
-
-        Ok(())
+        finalize_multisig_op(
+            &multisig_op_account_info,
+            &rent_collector_account_info,
+            clock,
+            MultisigOpParams::UpdateBalanceAccount {
+                account_guid_hash: *account_guid_hash,
+                wallet_address: *wallet_account_info.key,
+                update: update.clone(),
+            },
+            || -> ProgramResult {
+                let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
+                wallet.update_balance_account(account_guid_hash, update)?;
+                Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
+                Ok(())
+            },
+        )
     }
 
     fn handle_init_transfer(
@@ -512,16 +499,11 @@ impl Processor {
             }
         }
 
-        let mut multisig_op =
-            MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
-        multisig_op.init(
-            wallet.get_transfer_approvers_keys(balance_account),
-            balance_account.approvals_required_for_transfer,
-            clock.unix_timestamp,
-            calculate_expires(
-                clock.unix_timestamp,
-                balance_account.approval_timeout_for_transfer,
-            )?,
+        start_multisig_transfer_op(
+            &multisig_op_account_info,
+            &wallet,
+            &balance_account,
+            clock,
             MultisigOpParams::Transfer {
                 wallet_address: *wallet_account_info.key,
                 account_guid_hash: *account_guid_hash,
@@ -529,9 +511,7 @@ impl Processor {
                 amount,
                 token_mint: *token_mint.key,
             },
-        )?;
-        MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
-        Ok(())
+        )
     }
 
     fn handle_finalize_transfer(
@@ -550,102 +530,97 @@ impl Processor {
         let rent_collector_account_info = next_account_info(accounts_iter)?;
         let clock = get_clock_from_next_account(accounts_iter)?;
 
-        if !rent_collector_account_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
         let is_spl = token_mint.to_bytes() != [0; 32];
 
         if system_program_account.key != &system_program::id() {
             return Err(ProgramError::InvalidArgument);
         }
 
-        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
-
-        let expected_params = MultisigOpParams::Transfer {
-            wallet_address: *wallet_account_info.key,
-            account_guid_hash: *account_guid_hash,
-            destination: *destination_account.key,
-            amount,
-            token_mint,
-        };
-
-        if multisig_op.approved(&expected_params, &clock)? {
-            let bump_seed = validate_balance_account_and_get_seed(
-                source_account,
-                account_guid_hash,
-                program_id,
-            )?;
-            if is_spl {
-                let source_token_account = next_account_info(accounts_iter)?;
-                let source_token_account_key =
-                    get_associated_token_address(source_account.key, &token_mint);
-                if *source_token_account.key != source_token_account_key {
-                    return Err(WalletError::InvalidSourceTokenAccount.into());
-                }
-                let source_token_account_data =
-                    SPLAccount::unpack(&source_token_account.data.borrow())?;
-                if source_token_account_data.amount < amount {
-                    msg!(
-                        "Source token account only has {} tokens of {} requested",
-                        source_token_account_data.amount,
-                        amount
-                    );
-                    return Err(WalletError::InsufficientBalance.into());
-                }
-                let destination_token_account = next_account_info(accounts_iter)?;
-                let destination_token_account_key =
-                    get_associated_token_address(&destination_account.key, &token_mint);
-                if *destination_token_account.key != destination_token_account_key {
-                    return Err(WalletError::InvalidDestinationTokenAccount.into());
-                }
-
-                let spl_token_program = next_account_info(accounts_iter)?;
-                let token_mint_authority = next_account_info(accounts_iter)?;
-
-                invoke_signed(
-                    &spl_instruction::transfer(
-                        &SPL_TOKEN_ID(),
-                        &source_token_account_key,
-                        &destination_token_account_key,
-                        source_account.key,
-                        &[],
-                        amount,
-                    )?,
-                    &[
-                        source_token_account.clone(),
-                        destination_token_account.clone(),
-                        source_account.clone(),
-                        destination_account.clone(),
-                        token_mint_authority.clone(),
-                        spl_token_program.clone(),
-                    ],
-                    &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
-                )?;
-            } else {
-                if source_account.lamports() < amount {
-                    msg!(
-                        "Source account only has {} lamports of {} requested",
-                        source_account.lamports(),
-                        amount
-                    );
-                    return Err(WalletError::InsufficientBalance.into());
-                }
-
-                Self::transfer_sol_checked(
-                    source_account.clone(),
+        finalize_multisig_op(
+            &multisig_op_account_info,
+            &rent_collector_account_info,
+            clock,
+            MultisigOpParams::Transfer {
+                wallet_address: *wallet_account_info.key,
+                account_guid_hash: *account_guid_hash,
+                destination: *destination_account.key,
+                amount,
+                token_mint,
+            },
+            || -> ProgramResult {
+                let bump_seed = validate_balance_account_and_get_seed(
+                    source_account,
                     account_guid_hash,
-                    bump_seed,
-                    system_program_account.clone(),
-                    destination_account.clone(),
-                    amount,
+                    program_id,
                 )?;
-            }
-        }
+                if is_spl {
+                    let source_token_account = next_account_info(accounts_iter)?;
+                    let source_token_account_key =
+                        get_associated_token_address(source_account.key, &token_mint);
+                    if *source_token_account.key != source_token_account_key {
+                        return Err(WalletError::InvalidSourceTokenAccount.into());
+                    }
+                    let source_token_account_data =
+                        SPLAccount::unpack(&source_token_account.data.borrow())?;
+                    if source_token_account_data.amount < amount {
+                        msg!(
+                            "Source token account only has {} tokens of {} requested",
+                            source_token_account_data.amount,
+                            amount
+                        );
+                        return Err(WalletError::InsufficientBalance.into());
+                    }
+                    let destination_token_account = next_account_info(accounts_iter)?;
+                    let destination_token_account_key =
+                        get_associated_token_address(&destination_account.key, &token_mint);
+                    if *destination_token_account.key != destination_token_account_key {
+                        return Err(WalletError::InvalidDestinationTokenAccount.into());
+                    }
 
-        collect_remaining_balance(&multisig_op_account_info, &rent_collector_account_info)?;
+                    let spl_token_program = next_account_info(accounts_iter)?;
+                    let token_mint_authority = next_account_info(accounts_iter)?;
 
-        Ok(())
+                    invoke_signed(
+                        &spl_instruction::transfer(
+                            &SPL_TOKEN_ID(),
+                            &source_token_account_key,
+                            &destination_token_account_key,
+                            source_account.key,
+                            &[],
+                            amount,
+                        )?,
+                        &[
+                            source_token_account.clone(),
+                            destination_token_account.clone(),
+                            source_account.clone(),
+                            destination_account.clone(),
+                            token_mint_authority.clone(),
+                            spl_token_program.clone(),
+                        ],
+                        &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
+                    )?;
+                } else {
+                    if source_account.lamports() < amount {
+                        msg!(
+                            "Source account only has {} lamports of {} requested",
+                            source_account.lamports(),
+                            amount
+                        );
+                        return Err(WalletError::InsufficientBalance.into());
+                    }
+
+                    Self::transfer_sol_checked(
+                        source_account.clone(),
+                        account_guid_hash,
+                        bump_seed,
+                        system_program_account.clone(),
+                        destination_account.clone(),
+                        amount,
+                    )?;
+                }
+                Ok(())
+            },
+        )
     }
 
     fn handle_init_wrap_unwrap(
@@ -704,25 +679,18 @@ impl Processor {
             )?;
         }
 
-        let mut multisig_op =
-            MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
-        multisig_op.init(
-            wallet.get_transfer_approvers_keys(balance_account),
-            balance_account.approvals_required_for_transfer,
-            clock.unix_timestamp,
-            calculate_expires(
-                clock.unix_timestamp,
-                balance_account.approval_timeout_for_transfer,
-            )?,
+        start_multisig_transfer_op(
+            &multisig_op_account_info,
+            &wallet,
+            &balance_account,
+            clock,
             MultisigOpParams::Wrap {
                 wallet_address: *wallet_account_info.key,
                 account_guid_hash: *account_guid_hash,
                 amount,
                 direction,
             },
-        )?;
-        MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
-        Ok(())
+        )
     }
 
     fn handle_finalize_wrap_unwrap(
@@ -741,100 +709,98 @@ impl Processor {
         let clock = get_clock_from_next_account(accounts_iter)?;
         let wrapped_sol_account_info = next_account_info(accounts_iter)?;
 
-        if !rent_collector_account_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
         if system_program_account_info.key != &system_program::id() {
             return Err(ProgramError::InvalidArgument);
         }
 
-        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
-
-        let expected_params = MultisigOpParams::Wrap {
-            wallet_address: *wallet_account_info.key,
-            account_guid_hash: *account_guid_hash,
-            amount,
-            direction,
-        };
-
-        if multisig_op.approved(&expected_params, &clock)? {
-            let bump_seed = validate_balance_account_and_get_seed(
-                balance_account_info,
-                account_guid_hash,
-                program_id,
-            )?;
-
-            let wrapped_sol_account_key = get_associated_token_address(
-                balance_account_info.key,
-                &spl_token::native_mint::id(),
-            );
-            if *wrapped_sol_account_info.key != wrapped_sol_account_key {
-                return Err(WalletError::InvalidSourceTokenAccount.into());
-            }
-
-            if direction == WrapDirection::WRAP {
-                Self::transfer_sol_checked(
-                    balance_account_info.clone(),
+        finalize_multisig_op(
+            &multisig_op_account_info,
+            &rent_collector_account_info,
+            clock,
+            MultisigOpParams::Wrap {
+                wallet_address: *wallet_account_info.key,
+                account_guid_hash: *account_guid_hash,
+                amount,
+                direction,
+            },
+            || -> ProgramResult {
+                let bump_seed = validate_balance_account_and_get_seed(
+                    balance_account_info,
                     account_guid_hash,
-                    bump_seed,
-                    system_program_account_info.clone(),
-                    wrapped_sol_account_info.clone(),
-                    amount,
+                    program_id,
                 )?;
-            } else {
-                let wrapped_sol_account_data =
-                    SPLAccount::unpack(&wrapped_sol_account_info.data.borrow())?;
-                if wrapped_sol_account_data.amount < amount {
-                    msg!(
-                        "Wrapped SOL account only has {} lamports of {} requested",
-                        wrapped_sol_account_data.amount,
-                        amount
-                    );
-                    return Err(WalletError::InsufficientBalance.into());
+
+                let wrapped_sol_account_key = get_associated_token_address(
+                    balance_account_info.key,
+                    &spl_token::native_mint::id(),
+                );
+                if *wrapped_sol_account_info.key != wrapped_sol_account_key {
+                    return Err(WalletError::InvalidSourceTokenAccount.into());
                 }
 
-                // the only way to transfer lamports out of a token account is to close it, so we first
-                // close it and then transfer back whatever is remaining
-                let remaining = wrapped_sol_account_info
-                    .lamports()
-                    .checked_sub(amount)
-                    .ok_or(WalletError::AmountOverflow)?;
-
-                invoke_signed(
-                    &spl_token::instruction::close_account(
-                        &spl_token::id(),
-                        &wrapped_sol_account_info.key,
-                        &balance_account_info.key,
-                        &balance_account_info.key,
-                        &[],
-                    )?,
-                    &[
-                        wrapped_sol_account_info.clone(),
+                if direction == WrapDirection::WRAP {
+                    Self::transfer_sol_checked(
                         balance_account_info.clone(),
-                    ],
-                    &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
+                        account_guid_hash,
+                        bump_seed,
+                        system_program_account_info.clone(),
+                        wrapped_sol_account_info.clone(),
+                        amount,
+                    )?;
+                } else {
+                    let wrapped_sol_account_data =
+                        SPLAccount::unpack(&wrapped_sol_account_info.data.borrow())?;
+                    if wrapped_sol_account_data.amount < amount {
+                        msg!(
+                            "Wrapped SOL account only has {} lamports of {} requested",
+                            wrapped_sol_account_data.amount,
+                            amount
+                        );
+                        return Err(WalletError::InsufficientBalance.into());
+                    }
+
+                    // the only way to transfer lamports out of a token account is to close it, so we first
+                    // close it and then transfer back whatever is remaining
+                    let remaining = wrapped_sol_account_info
+                        .lamports()
+                        .checked_sub(amount)
+                        .ok_or(WalletError::AmountOverflow)?;
+
+                    invoke_signed(
+                        &spl_token::instruction::close_account(
+                            &spl_token::id(),
+                            &wrapped_sol_account_info.key,
+                            &balance_account_info.key,
+                            &balance_account_info.key,
+                            &[],
+                        )?,
+                        &[
+                            wrapped_sol_account_info.clone(),
+                            balance_account_info.clone(),
+                        ],
+                        &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
+                    )?;
+
+                    Self::transfer_sol_checked(
+                        balance_account_info.clone(),
+                        account_guid_hash,
+                        bump_seed,
+                        system_program_account_info.clone(),
+                        wrapped_sol_account_info.clone(),
+                        remaining,
+                    )?;
+                }
+
+                invoke(
+                    &spl_token::instruction::sync_native(
+                        &spl_token::id(),
+                        &wrapped_sol_account_key,
+                    )?,
+                    &[wrapped_sol_account_info.clone()],
                 )?;
-
-                Self::transfer_sol_checked(
-                    balance_account_info.clone(),
-                    account_guid_hash,
-                    bump_seed,
-                    system_program_account_info.clone(),
-                    wrapped_sol_account_info.clone(),
-                    remaining,
-                )?;
-            }
-
-            invoke(
-                &spl_token::instruction::sync_native(&spl_token::id(), &wrapped_sol_account_key)?,
-                &[wrapped_sol_account_info.clone()],
-            )?;
-        }
-
-        collect_remaining_balance(&multisig_op_account_info, &rent_collector_account_info)?;
-
-        Ok(())
+                Ok(())
+            },
+        )
     }
 
     fn handle_approval_disposition(
@@ -884,24 +850,17 @@ impl Processor {
             SlotUpdateType::Clear => wallet.validate_remove_signer((slot_id, signer))?,
         }
 
-        let mut multisig_op =
-            MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
-
-        multisig_op.init(
-            wallet.get_config_approvers_keys(),
-            wallet.approvals_required_for_config,
-            clock.unix_timestamp,
-            calculate_expires(clock.unix_timestamp, wallet.approval_timeout_for_config)?,
+        start_multisig_config_op(
+            &multisig_op_account_info,
+            &wallet,
+            clock,
             MultisigOpParams::UpdateSigner {
                 wallet_address: *wallet_account_info.key,
                 slot_update_type,
                 slot_id,
                 signer,
             },
-        )?;
-        MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
-
-        Ok(())
+        )
     }
 
     fn handle_finalize_update_signer(
@@ -917,44 +876,26 @@ impl Processor {
         let account_to_return_rent_to = next_account_info(accounts_iter)?;
         let clock = get_clock_from_next_account(accounts_iter)?;
 
-        if !account_to_return_rent_to.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        let multisig_op = MultisigOp::unpack(&multisig_op_account_info.data.borrow())?;
-
-        let expected_params = MultisigOpParams::UpdateSigner {
-            wallet_address: *wallet_account_info.key,
-            slot_update_type,
-            slot_id,
-            signer,
-        };
-
-        if multisig_op.approved(&expected_params, &clock)? {
-            let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow_mut())?;
-            match slot_update_type {
-                SlotUpdateType::SetIfEmpty => wallet.add_signer((slot_id, signer))?,
-                SlotUpdateType::Clear => wallet.remove_signer((slot_id, signer))?,
-            }
-            Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
-        }
-
-        collect_remaining_balance(&multisig_op_account_info, &account_to_return_rent_to)?;
-        Self::collect_remaining_balance(&multisig_op_account_info, &account_to_return_rent_to)?;
-
-        Ok(())
-    }
-
-    fn collect_remaining_balance(from: &AccountInfo, to: &AccountInfo) -> ProgramResult {
-        // this moves the lamports back to the fee payer.
-        **to.lamports.borrow_mut() = to
-            .lamports()
-            .checked_add(from.lamports())
-            .ok_or(WalletError::AmountOverflow)?;
-        **from.lamports.borrow_mut() = 0;
-        *from.data.borrow_mut() = &mut [];
-
-        Ok(())
+        finalize_multisig_op(
+            &multisig_op_account_info,
+            &account_to_return_rent_to,
+            clock,
+            MultisigOpParams::UpdateSigner {
+                wallet_address: *wallet_account_info.key,
+                slot_update_type,
+                slot_id,
+                signer,
+            },
+            || -> ProgramResult {
+                let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow_mut())?;
+                match slot_update_type {
+                    SlotUpdateType::SetIfEmpty => wallet.add_signer((slot_id, signer))?,
+                    SlotUpdateType::Clear => wallet.remove_signer((slot_id, signer))?,
+                }
+                Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
+                Ok(())
+            },
+        )
     }
 
     fn transfer_sol_checked<'a>(

@@ -1,7 +1,10 @@
 use crate::common::instructions;
 use crate::common::instructions::{
-    finalize_update_signer, init_balance_account_creation, init_transfer, init_update_signer,
-    init_wallet_update, set_approval_disposition,
+    finalize_balance_account_update, finalize_update_signer,
+    finalize_wallet_config_policy_update_instruction, finalize_whitelist_status_update,
+    init_balance_account_creation, init_balance_account_update, init_transfer, init_update_signer,
+    init_wallet_config_policy_update_instruction, init_wallet_update, init_whitelist_status_update,
+    set_approval_disposition,
 };
 use arrayref::array_ref;
 use itertools::Itertools;
@@ -22,7 +25,7 @@ use strike_wallet::model::address_book::{AddressBook, AddressBookEntry, AddressB
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
     ApprovalDisposition, ApprovalDispositionRecord, MultisigOp, MultisigOpParams,
-    OperationDisposition, SlotUpdateType, WrapDirection,
+    OperationDisposition, SlotUpdateType, WhitelistStatus, WrapDirection,
 };
 use strike_wallet::model::signer::Signer;
 use strike_wallet::model::wallet::{Approvers, Signers};
@@ -40,7 +43,6 @@ use {
     },
     strike_wallet::{model::wallet::Wallet, processor::Processor},
 };
-use crate::{finalize_wallet_config_policy_update_instruction, init_wallet_config_policy_update_instruction};
 
 pub trait SignerKey {
     fn pubkey_as_signer(&self) -> Signer;
@@ -589,7 +591,7 @@ pub async fn update_signer(
         .unwrap();
     let op_account_balance = context
         .banks_client
-        .get_balance(context.multisig_op_account.pubkey())
+        .get_balance(multisig_op_account.pubkey())
         .await
         .unwrap();
     context
@@ -618,6 +620,196 @@ pub async fn update_signer(
     assert_eq!(
         starting_rent_collector_balance + op_account_balance - 5000,
         ending_rent_collector_balance
+    );
+}
+
+pub async fn whitelist_status_update(
+    context: &mut BalanceAccountTestContext,
+    status: WhitelistStatus,
+    expected_error: Option<InstructionError>,
+) {
+    let rent = context.banks_client.get_rent().await.unwrap();
+    let multisig_op_rent = rent.minimum_balance(MultisigOp::LEN);
+    let multisig_op_account = Keypair::new();
+    let init_transaction = Transaction::new_signed_with_payer(
+        &[
+            system_instruction::create_account(
+                &context.payer.pubkey(),
+                &multisig_op_account.pubkey(),
+                multisig_op_rent,
+                MultisigOp::LEN as u64,
+                &context.program_id,
+            ),
+            init_whitelist_status_update(
+                &context.program_id,
+                &context.wallet_account.pubkey(),
+                &multisig_op_account.pubkey(),
+                &context.assistant_account.pubkey(),
+                context.balance_account_guid_hash,
+                status,
+            ),
+        ],
+        Some(&context.payer.pubkey()),
+        &[
+            &context.payer,
+            &multisig_op_account,
+            &context.assistant_account,
+        ],
+        context.recent_blockhash,
+    );
+    match expected_error {
+        None => context
+            .banks_client
+            .process_transaction(init_transaction)
+            .await
+            .unwrap(),
+        Some(error) => {
+            assert_eq!(
+                context
+                    .banks_client
+                    .process_transaction(init_transaction)
+                    .await
+                    .unwrap_err()
+                    .unwrap(),
+                TransactionError::InstructionError(1, error),
+            );
+            return;
+        }
+    }
+
+    // verify the multisig op account data
+    let multisig_op = MultisigOp::unpack_from_slice(
+        context
+            .banks_client
+            .get_account(multisig_op_account.pubkey())
+            .await
+            .unwrap()
+            .unwrap()
+            .data(),
+    )
+    .unwrap();
+    assert!(multisig_op.is_initialized);
+    assert_eq!(
+        multisig_op.disposition_records.to_set(),
+        HashSet::from([
+            ApprovalDispositionRecord {
+                approver: context.approvers[0].pubkey(),
+                disposition: ApprovalDisposition::NONE,
+            },
+            ApprovalDispositionRecord {
+                approver: context.approvers[1].pubkey(),
+                disposition: ApprovalDisposition::NONE,
+            },
+        ])
+    );
+    assert_eq!(multisig_op.dispositions_required, 1);
+    assert_eq!(
+        multisig_op.operation_disposition,
+        OperationDisposition::NONE
+    );
+
+    assert_eq!(
+        multisig_op.params_hash,
+        MultisigOpParams::WhitelistStatusUpdate {
+            wallet_address: context.wallet_account.pubkey(),
+            account_guid_hash: context.balance_account_guid_hash,
+            status
+        }
+        .hash()
+    );
+
+    approve_or_deny_1_of_2_multisig_op(
+        context.banks_client.borrow_mut(),
+        &context.program_id,
+        &multisig_op_account.pubkey(),
+        &context.approvers[0],
+        &context.payer,
+        &context.approvers[1].pubkey(),
+        context.recent_blockhash,
+        ApprovalDisposition::APPROVE,
+    )
+    .await;
+
+    // verify the multisig op account data
+    let multisig_op = MultisigOp::unpack_from_slice(
+        context
+            .banks_client
+            .get_account(multisig_op_account.pubkey())
+            .await
+            .unwrap()
+            .unwrap()
+            .data(),
+    )
+    .unwrap();
+    assert_eq!(
+        multisig_op.operation_disposition,
+        OperationDisposition::APPROVED
+    );
+
+    // finalize the multisig op
+    let finalize_transaction = Transaction::new_signed_with_payer(
+        &[finalize_whitelist_status_update(
+            &context.program_id,
+            &context.wallet_account.pubkey(),
+            &multisig_op_account.pubkey(),
+            &context.payer.pubkey(),
+            context.balance_account_guid_hash,
+            status,
+        )],
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.recent_blockhash,
+    );
+
+    let starting_rent_collector_balance = context
+        .banks_client
+        .get_balance(context.payer.pubkey())
+        .await
+        .unwrap();
+    let op_account_balance = context
+        .banks_client
+        .get_balance(multisig_op_account.pubkey())
+        .await
+        .unwrap();
+    context
+        .banks_client
+        .process_transaction(finalize_transaction)
+        .await
+        .unwrap();
+
+    // verify the multisig op account is closed
+    assert!(context
+        .banks_client
+        .get_account(multisig_op_account.pubkey())
+        .await
+        .unwrap()
+        .is_none());
+    // and that the remaining balance went to the rent collector (less the 5000 in fees for the finalize)
+    let ending_rent_collector_balance = context
+        .banks_client
+        .get_balance(context.payer.pubkey())
+        .await
+        .unwrap();
+    assert_eq!(
+        starting_rent_collector_balance + op_account_balance - 5000,
+        ending_rent_collector_balance
+    );
+}
+
+pub async fn verify_whitelist_status(
+    context: &mut BalanceAccountTestContext,
+    expected_status: WhitelistStatus,
+    expected_whitelist_count: usize,
+) {
+    let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
+    let account = wallet
+        .get_balance_account(&context.balance_account_guid_hash)
+        .unwrap();
+
+    assert_eq!(account.whitelist_status, expected_status);
+    assert_eq!(
+        account.allowed_destinations.count_enabled(),
+        expected_whitelist_count
     );
 }
 
@@ -881,7 +1073,7 @@ pub async fn setup_balance_account_tests(
                 2,
                 Duration::from_secs(1800),
                 transfer_approvers.clone(),
-                vec![(SlotId::new(0), addr_book_entry)],
+                vec![],
             ),
         ],
         Some(&payer.pubkey()),
@@ -925,7 +1117,7 @@ pub async fn setup_balance_account_tests(
         approval_timeout_for_transfer: Duration::from_secs(1800),
         add_transfer_approvers: transfer_approvers.clone(),
         remove_transfer_approvers: vec![],
-        add_allowed_destinations: vec![(SlotId::new(0), addr_book_entry)],
+        add_allowed_destinations: vec![],
         remove_allowed_destinations: vec![],
     };
 
@@ -1148,6 +1340,112 @@ pub async fn setup_transfer_test(
         .await;
 
     (multisig_op_account, result)
+}
+
+pub async fn modify_whitelist(
+    context: &mut BalanceAccountTestContext,
+    destinations_to_add: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    destinations_to_remove: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    expected_error: Option<InstructionError>,
+) {
+    // add a whitelisted destination
+    let rent = context.banks_client.get_rent().await.unwrap();
+    let multisig_op_rent = rent.minimum_balance(MultisigOp::LEN);
+    let multisig_op_account = Keypair::new();
+
+    let balance_account_update_transaction = Transaction::new_signed_with_payer(
+        &[
+            system_instruction::create_account(
+                &context.payer.pubkey(),
+                &multisig_op_account.pubkey(),
+                multisig_op_rent,
+                MultisigOp::LEN as u64,
+                &context.program_id,
+            ),
+            init_balance_account_update(
+                &context.program_id,
+                &context.wallet_account.pubkey(),
+                &multisig_op_account.pubkey(),
+                &context.assistant_account.pubkey(),
+                context.balance_account_guid_hash,
+                context.balance_account_name_hash,
+                2,
+                Duration::from_secs(7200),
+                vec![],
+                vec![],
+                destinations_to_add.clone(),
+                destinations_to_remove.clone(),
+            ),
+        ],
+        Some(&context.payer.pubkey()),
+        &[
+            &context.payer,
+            &multisig_op_account,
+            &context.assistant_account,
+        ],
+        context.recent_blockhash,
+    );
+    match expected_error {
+        None => context
+            .banks_client
+            .process_transaction(balance_account_update_transaction)
+            .await
+            .unwrap(),
+        Some(error) => {
+            assert_eq!(
+                context
+                    .banks_client
+                    .process_transaction(balance_account_update_transaction)
+                    .await
+                    .unwrap_err()
+                    .unwrap(),
+                TransactionError::InstructionError(1, error),
+            );
+            return;
+        }
+    }
+
+    approve_or_deny_1_of_2_multisig_op(
+        context.banks_client.borrow_mut(),
+        &context.program_id,
+        &multisig_op_account.pubkey(),
+        &context.approvers[0],
+        &context.payer,
+        &context.approvers[1].pubkey(),
+        context.recent_blockhash,
+        ApprovalDisposition::APPROVE,
+    )
+    .await;
+
+    let expected_config_update = BalanceAccountUpdate {
+        name_hash: context.balance_account_name_hash,
+        approvals_required_for_transfer: 2,
+        approval_timeout_for_transfer: Duration::from_secs(7200),
+        add_transfer_approvers: vec![],
+        remove_transfer_approvers: vec![],
+        add_allowed_destinations: destinations_to_add,
+        remove_allowed_destinations: destinations_to_remove,
+    };
+
+    // finalize the config update
+    let finalize_update = Transaction::new_signed_with_payer(
+        &[finalize_balance_account_update(
+            &context.program_id,
+            &context.wallet_account.pubkey(),
+            &multisig_op_account.pubkey(),
+            &context.payer.pubkey(),
+            context.balance_account_guid_hash,
+            expected_config_update,
+        )],
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.recent_blockhash,
+    );
+    context
+        .banks_client
+        .process_transaction(finalize_update)
+        .await
+        .unwrap();
 }
 
 pub struct SPLTestContext {

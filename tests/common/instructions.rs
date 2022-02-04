@@ -10,7 +10,9 @@ use strike_wallet::instruction::{
 };
 use strike_wallet::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
-use strike_wallet::model::multisig_op::{ApprovalDisposition, SlotUpdateType, WrapDirection};
+use strike_wallet::model::multisig_op::{
+    ApprovalDisposition, SlotUpdateType, WhitelistStatus, WrapDirection,
+};
 use strike_wallet::model::signer::Signer;
 use strike_wallet::utils::SlotId;
 
@@ -56,7 +58,7 @@ fn init_multisig_op(
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
     assistant_account: &Pubkey,
-    data: Vec<u8>,
+    program_instruction: ProgramInstruction,
 ) -> Instruction {
     let mut accounts = vec![AccountMeta::new(*multisig_op_account, false)];
     accounts.push(AccountMeta::new_readonly(*wallet_account, false));
@@ -66,7 +68,7 @@ fn init_multisig_op(
     Instruction {
         program_id: *program_id,
         accounts,
-        data,
+        data: program_instruction.borrow().pack(),
     }
 }
 
@@ -94,15 +96,12 @@ pub fn init_wallet_update(
         add_address_book_entries: add_address_book_entries.clone(),
         remove_address_book_entries: remove_address_book_entries.clone(),
     };
-    let data = ProgramInstruction::InitWalletUpdate { update }
-        .borrow()
-        .pack();
     init_multisig_op(
         program_id,
         wallet_account,
         multisig_op_account,
         assistant_account,
-        data,
+        ProgramInstruction::InitWalletUpdate { update },
     )
 }
 
@@ -169,26 +168,23 @@ pub fn init_balance_account_creation(
     approvers: Vec<(SlotId<Signer>, Signer)>,
     allowed_destinations: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
 ) -> Instruction {
-    let data = ProgramInstruction::InitBalanceAccountCreation {
-        account_guid_hash,
-        update: BalanceAccountUpdate {
-            name_hash,
-            approvals_required_for_transfer,
-            approval_timeout_for_transfer,
-            add_transfer_approvers: approvers.clone(),
-            remove_transfer_approvers: vec![],
-            add_allowed_destinations: allowed_destinations,
-            remove_allowed_destinations: vec![],
-        },
-    }
-    .borrow()
-    .pack();
     init_multisig_op(
         program_id,
         wallet_account,
         multisig_op_account,
         assistant_account,
-        data,
+        ProgramInstruction::InitBalanceAccountCreation {
+            account_guid_hash,
+            update: BalanceAccountUpdate {
+                name_hash,
+                approvals_required_for_transfer,
+                approval_timeout_for_transfer,
+                add_transfer_approvers: approvers.clone(),
+                remove_transfer_approvers: vec![],
+                add_allowed_destinations: allowed_destinations,
+                remove_allowed_destinations: vec![],
+            },
+        },
     )
 }
 
@@ -234,26 +230,23 @@ pub fn init_balance_account_update(
     add_allowed_destinations: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
     remove_allowed_destinations: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
 ) -> Instruction {
-    let data = ProgramInstruction::InitBalanceAccountUpdate {
-        account_guid_hash,
-        update: BalanceAccountUpdate {
-            name_hash: account_name_hash,
-            approvals_required_for_transfer,
-            approval_timeout_for_transfer,
-            add_transfer_approvers,
-            remove_transfer_approvers,
-            add_allowed_destinations,
-            remove_allowed_destinations,
-        },
-    }
-    .borrow()
-    .pack();
     init_multisig_op(
         program_id,
         wallet_account,
         multisig_op_account,
         assistant_account,
-        data,
+        ProgramInstruction::InitBalanceAccountUpdate {
+            account_guid_hash,
+            update: BalanceAccountUpdate {
+                name_hash: account_name_hash,
+                approvals_required_for_transfer,
+                approval_timeout_for_transfer,
+                add_transfer_approvers,
+                remove_transfer_approvers,
+                add_allowed_destinations,
+                remove_allowed_destinations,
+            },
+        },
     )
 }
 
@@ -482,19 +475,16 @@ pub fn init_update_signer(
     slot_id: SlotId<Signer>,
     signer: Signer,
 ) -> Instruction {
-    let data = ProgramInstruction::InitUpdateSigner {
-        slot_update_type,
-        slot_id,
-        signer,
-    }
-    .borrow()
-    .pack();
     init_multisig_op(
         program_id,
         wallet_account,
         multisig_op_account,
         assistant_account,
-        data,
+        ProgramInstruction::InitUpdateSigner {
+            slot_update_type,
+            slot_id,
+            signer,
+        },
     )
 }
 
@@ -665,6 +655,55 @@ pub fn finalize_dapp_transaction(
         }
     }
     accounts.extend(accounts_by_key.values().into_iter().cloned());
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn init_whitelist_status_update(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    assistant_account: &Pubkey,
+    account_guid_hash: BalanceAccountGuidHash,
+    status: WhitelistStatus,
+) -> Instruction {
+    init_multisig_op(
+        program_id,
+        wallet_account,
+        multisig_op_account,
+        assistant_account,
+        ProgramInstruction::InitWhitelistStatusUpdate {
+            account_guid_hash,
+            status,
+        },
+    )
+}
+
+pub fn finalize_whitelist_status_update(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    account_guid_hash: BalanceAccountGuidHash,
+    status: WhitelistStatus,
+) -> Instruction {
+    let data = ProgramInstruction::FinalizeWhitelistStatusUpdate {
+        account_guid_hash,
+        status,
+    }
+    .borrow()
+    .pack();
+
+    let accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*wallet_account, false),
+        AccountMeta::new(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+    ];
 
     Instruction {
         program_id: *program_id,

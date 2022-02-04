@@ -4,6 +4,7 @@ use crate::model::address_book::{AddressBook, AddressBookEntry, AddressBookEntry
 use crate::model::balance_account::{
     AllowedDestinations, BalanceAccount, BalanceAccountGuidHash, BalanceAccountNameHash,
 };
+use crate::model::multisig_op::WhitelistStatus;
 use crate::model::signer::Signer;
 use crate::utils::{GetSlotIds, SlotFlags, SlotId, Slots};
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
@@ -149,15 +150,14 @@ impl Wallet {
         address: &Pubkey,
         name_hash: &AddressBookEntryNameHash,
     ) -> Result<bool, ProgramError> {
-        Ok(
-            match self.address_book.find_id(&AddressBookEntry {
+        Ok(balance_account.whitelist_disabled()
+            || match self.address_book.find_id(&AddressBookEntry {
                 address: *address,
                 name_hash: *name_hash,
             }) {
                 Some(entry_ref) => balance_account.allowed_destinations.is_enabled(&entry_ref),
                 None => false,
-            },
-        )
+            })
     }
 
     pub fn validate_update(&self, update: &WalletUpdate) -> ProgramResult {
@@ -301,6 +301,7 @@ impl Wallet {
             approval_timeout_for_transfer: Duration::from_secs(0),
             transfer_approvers: Approvers::zero(),
             allowed_destinations: AllowedDestinations::zero(),
+            whitelist_status: WhitelistStatus::Off,
         };
         self.balance_accounts.push(balance_account);
         self.update_balance_account(account_guid_hash, update)
@@ -313,6 +314,33 @@ impl Wallet {
     ) -> ProgramResult {
         let mut self_clone = self.clone();
         self_clone.update_balance_account(account_guid_hash, update)
+    }
+
+    pub fn validate_whitelist_status_update(
+        &self,
+        account_guid_hash: &BalanceAccountGuidHash,
+        status: WhitelistStatus,
+    ) -> ProgramResult {
+        let mut self_clone = self.clone();
+        self_clone.update_whitelist_status(account_guid_hash, status)
+    }
+
+    pub fn update_whitelist_status(
+        &mut self,
+        account_guid_hash: &BalanceAccountGuidHash,
+        status: WhitelistStatus,
+    ) -> ProgramResult {
+        let balance_account_idx = self.get_balance_account_index(account_guid_hash)?;
+        if status == WhitelistStatus::Off {
+            if self.balance_accounts[balance_account_idx].has_whitelisted_destinations() {
+                msg!("Cannot turn whitelist status to off as there are whitelisted addresses");
+                return Err(ProgramError::InvalidArgument);
+            }
+        }
+
+        self.balance_accounts[balance_account_idx].whitelist_status = status;
+
+        Ok(())
     }
 
     pub fn update_balance_account(
@@ -341,6 +369,11 @@ impl Wallet {
 
         if perform_timeout_update {
             balance_account.approval_timeout_for_transfer = update.approval_timeout_for_transfer;
+        }
+
+        if !update.add_allowed_destinations.is_empty() && balance_account.whitelist_disabled() {
+            msg!("Cannot add destinations when whitelisting status is Off");
+            return Err(WalletError::WhitelistingStatusOff.into());
         }
 
         let approvers_count_after_update = balance_account.transfer_approvers.count_enabled();

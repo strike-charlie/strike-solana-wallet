@@ -123,6 +123,29 @@ impl SlotUpdateType {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[repr(u8)]
+pub enum WhitelistStatus {
+    Off = 0,
+    On = 1,
+}
+
+impl WhitelistStatus {
+    pub fn from_u8(value: u8) -> WhitelistStatus {
+        match value {
+            0 => WhitelistStatus::Off,
+            _ => WhitelistStatus::On,
+        }
+    }
+
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            WhitelistStatus::Off => 0,
+            WhitelistStatus::On => 1,
+        }
+    }
+}
+
 impl ApprovalDispositionRecord {
     pub(crate) const LEN: usize = 1 + PUBKEY_BYTES;
 
@@ -425,6 +448,11 @@ pub enum MultisigOpParams {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,
     },
+    WhitelistStatusUpdate {
+        wallet_address: Pubkey,
+        account_guid_hash: BalanceAccountGuidHash,
+        status: WhitelistStatus,
+    },
 }
 
 impl MultisigOpParams {
@@ -578,6 +606,19 @@ impl MultisigOpParams {
                 bytes[1..1 + PUBKEY_BYTES].copy_from_slice(&wallet_address.to_bytes());
                 bytes[1 + PUBKEY_BYTES..1 + PUBKEY_BYTES + update_bytes.len()]
                     .copy_from_slice(&update_bytes);
+                hash(&bytes)
+            }
+            MultisigOpParams::WhitelistStatusUpdate {
+                wallet_address,
+                account_guid_hash,
+                status,
+            } => {
+                let mut bytes: Vec<u8> = Vec::new();
+                bytes.resize(1 + PUBKEY_BYTES + 32 + 1, 0);
+                bytes[0] = 8; // type code
+                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
+                bytes[33..65].copy_from_slice(account_guid_hash.to_bytes());
+                bytes[65] = status.to_u8();
                 hash(&bytes)
             }
         }

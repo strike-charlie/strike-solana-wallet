@@ -1,7 +1,7 @@
 #![cfg(feature = "test-bpf")]
 mod common;
-pub use common::utils::*;
 pub use common::instructions::*;
+pub use common::utils::*;
 
 use std::borrow::BorrowMut;
 use std::time::{Duration, SystemTime};
@@ -28,6 +28,7 @@ use strike_wallet::model::address_book::{AddressBook, AddressBookEntry, AddressB
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
     ApprovalDisposition, ApprovalDispositionRecord, OperationDisposition, SlotUpdateType,
+    WhitelistStatus,
 };
 use strike_wallet::model::signer::Signer;
 use strike_wallet::model::wallet::{Approvers, Signers, Wallet};
@@ -847,7 +848,7 @@ async fn test_balance_account_creation() {
     );
     assert_eq!(
         wallet.get_allowed_destinations(balance_account).to_set(),
-        HashSet::from([context.allowed_destination])
+        HashSet::from([])
     );
     assert_eq!(balance_account.approvals_required_for_transfer, 2);
     assert_eq!(
@@ -1028,6 +1029,16 @@ async fn test_balance_account_update() {
 
     utils::finalize_balance_account_creation(context.borrow_mut()).await;
 
+    whitelist_status_update(&mut context, WhitelistStatus::On, None).await;
+    let destination_to_add = context.allowed_destination;
+    modify_whitelist(
+        &mut context,
+        vec![(SlotId::new(0), destination_to_add)],
+        vec![],
+        None,
+    )
+    .await;
+
     let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
 
     let rent = context.banks_client.get_rent().await.unwrap();
@@ -1199,6 +1210,16 @@ async fn test_balance_account_update_is_denied() {
     .await;
 
     utils::finalize_balance_account_creation(context.borrow_mut()).await;
+
+    whitelist_status_update(&mut context, WhitelistStatus::On, None).await;
+    let destination_to_add = context.allowed_destination;
+    modify_whitelist(
+        &mut context,
+        vec![(SlotId::new(0), destination_to_add)],
+        vec![],
+        None,
+    )
+    .await;
 
     let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
     let balance_account = wallet
@@ -1788,6 +1809,16 @@ async fn test_transfer_sol_denied() {
 async fn test_transfer_wrong_destination_name_hash() {
     let (mut context, balance_account) = setup_balance_account_tests_and_finalize(None).await;
 
+    whitelist_status_update(&mut context, WhitelistStatus::On, None).await;
+    let destination_to_add = context.allowed_destination;
+    modify_whitelist(
+        &mut context,
+        vec![(SlotId::new(0), destination_to_add)],
+        vec![],
+        None,
+    )
+    .await;
+
     context.destination_name_hash = AddressBookEntryNameHash::zero();
 
     let (_, result) = setup_transfer_test(context.borrow_mut(), &balance_account, None, None).await;
@@ -1924,91 +1955,7 @@ async fn test_transfer_insufficient_balance() {
 #[tokio::test]
 async fn test_transfer_unwhitelisted_address() {
     let (mut context, balance_account) = setup_balance_account_tests_and_finalize(None).await;
-
-    // remove the whitelisted destination
-    let rent = context.banks_client.get_rent().await.unwrap();
-    let multisig_op_rent = rent.minimum_balance(MultisigOp::LEN);
-    let multisig_op_account = Keypair::new();
-
-    let balance_account_update_transaction = Transaction::new_signed_with_payer(
-        &[
-            system_instruction::create_account(
-                &context.payer.pubkey(),
-                &multisig_op_account.pubkey(),
-                multisig_op_rent,
-                MultisigOp::LEN as u64,
-                &context.program_id,
-            ),
-            init_balance_account_update(
-                &context.program_id,
-                &context.wallet_account.pubkey(),
-                &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
-                context.balance_account_guid_hash,
-                context.balance_account_name_hash,
-                2,
-                Duration::from_secs(7200),
-                vec![],
-                vec![],
-                vec![],
-                vec![(SlotId::new(0), context.allowed_destination)],
-            ),
-        ],
-        Some(&context.payer.pubkey()),
-        &[
-            &context.payer,
-            &multisig_op_account,
-            &context.assistant_account,
-        ],
-        context.recent_blockhash,
-    );
-    context
-        .banks_client
-        .process_transaction(balance_account_update_transaction)
-        .await
-        .unwrap();
-
-    approve_or_deny_1_of_2_multisig_op(
-        context.banks_client.borrow_mut(),
-        &context.program_id,
-        &multisig_op_account.pubkey(),
-        &context.approvers[0],
-        &context.payer,
-        &context.approvers[1].pubkey(),
-        context.recent_blockhash,
-        ApprovalDisposition::APPROVE,
-    )
-    .await;
-
-    let expected_config_update = BalanceAccountUpdate {
-        name_hash: context.balance_account_name_hash,
-        approvals_required_for_transfer: 2,
-        approval_timeout_for_transfer: Duration::from_secs(7200),
-        add_transfer_approvers: vec![],
-        remove_transfer_approvers: vec![],
-        add_allowed_destinations: vec![],
-        remove_allowed_destinations: vec![(SlotId::new(0), context.allowed_destination)],
-    };
-
-    // finalize the config update
-    let finalize_update = Transaction::new_signed_with_payer(
-        &[finalize_balance_account_update(
-            &context.program_id,
-            &context.wallet_account.pubkey(),
-            &multisig_op_account.pubkey(),
-            &context.payer.pubkey(),
-            context.balance_account_guid_hash,
-            expected_config_update,
-        )],
-        Some(&context.payer.pubkey()),
-        &[&context.payer],
-        context.recent_blockhash,
-    );
-    context
-        .banks_client
-        .process_transaction(finalize_update)
-        .await
-        .unwrap();
+    whitelist_status_update(&mut context, WhitelistStatus::On, None).await;
 
     let (_, result) = setup_transfer_test(context.borrow_mut(), &balance_account, None, None).await;
     assert_eq!(
