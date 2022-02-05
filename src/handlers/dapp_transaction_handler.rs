@@ -162,37 +162,40 @@ pub fn finalize(
         instructions: instructions.clone(),
     };
 
-    let is_approved = multisig_op
-        .approved(&expected_params, &clock)
-        .unwrap_or_else(|e| {
-            msg!("Approval failed: {:?}", e);
-            false
-        });
+    const NOT_FINAL: u32 = WalletError::TransferDispositionNotFinal as u32;
+    let (is_approved, is_final) = match multisig_op.approved(&expected_params, &clock) {
+        Ok(a) => (a, true),
+        Err(ProgramError::Custom(NOT_FINAL)) => (false, false),
+        Err(e) => return Err(e),
+    };
 
     let bump_seed =
         validate_balance_account_and_get_seed(balance_account, account_guid_hash, program_id)?;
 
-    let starting_balances: Vec<u64> = if is_approved {
+    let starting_balances: Vec<u64> = if is_final {
         Vec::new()
     } else {
         account_balances(accounts)
     };
 
-    let starting_spl_balances: Vec<SplBalance> = if is_approved {
+    let starting_spl_balances: Vec<SplBalance> = if is_final {
         Vec::new()
     } else {
         spl_balances(accounts)
     };
 
-    for instruction in instructions.iter() {
-        invoke_signed(
-            &instruction,
-            &accounts,
-            &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
-        )?;
+    // actually run instructions if action is approved or this is a simulation (we are not final)
+    if is_approved || !is_final {
+        for instruction in instructions.iter() {
+            invoke_signed(
+                &instruction,
+                &accounts,
+                &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
+            )?;
+        }
     }
 
-    if is_approved {
+    if is_final {
         collect_remaining_balance(&multisig_op_account_info, &rent_collector_account_info)?;
 
         Ok(())
