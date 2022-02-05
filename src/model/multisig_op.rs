@@ -8,6 +8,7 @@ use crate::model::wallet::Wallet;
 use crate::utils::SlotId;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use bitvec::macros::internal::funty::Fundamental;
+use bytes::BufMut;
 use solana_program::account_info::AccountInfo;
 use solana_program::clock::Clock;
 use solana_program::entrypoint::ProgramResult;
@@ -557,7 +558,7 @@ impl MultisigOpParams {
                 bytes.push(7);
                 bytes.extend_from_slice(&wallet_address.to_bytes());
                 bytes.extend_from_slice(&account_guid_hash.to_bytes());
-                bytes.extend_from_slice(instructions.len().as_u32().to_le_bytes().as_ref());
+                bytes.put_u16_le(instructions.len().as_u16());
                 for instruction in instructions.into_iter() {
                     append_instruction(instruction, &mut bytes);
                 }

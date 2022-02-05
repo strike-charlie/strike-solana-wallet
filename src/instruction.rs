@@ -343,7 +343,7 @@ impl ProgramInstruction {
             } => {
                 buf.push(16);
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
-                buf.push(instructions.len() as u8);
+                buf.put_u16_le(instructions.len() as u16);
                 for instruction in instructions.iter() {
                     append_instruction(instruction, &mut buf);
                 }
@@ -354,7 +354,7 @@ impl ProgramInstruction {
             } => {
                 buf.push(17);
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
-                buf.push(instructions.len() as u8);
+                buf.put_u16_le(instructions.len() as u16);
                 for instruction in instructions.iter() {
                     append_instruction(instruction, &mut buf);
                 }
@@ -780,8 +780,8 @@ fn read_u8<'a>(iter: &'a mut Iter<u8>) -> Option<&'a u8> {
     iter.next()
 }
 
-fn read_u32(iter: &mut Iter<u8>) -> Option<u32> {
-    read_fixed_size_array::<4>(iter).map(|slice| u32::from_le_bytes(*slice))
+fn read_u16(iter: &mut Iter<u8>) -> Option<u16> {
+    read_fixed_size_array::<2>(iter).map(|slice| u16::from_le_bytes(*slice))
 }
 
 fn read_fixed_size_array<'a, const SIZE: usize>(iter: &'a mut Iter<u8>) -> Option<&'a [u8; SIZE]> {
@@ -829,7 +829,7 @@ fn append_signers(signers: &Vec<(SlotId<Signer>, Signer)>, dst: &mut Vec<u8>) {
 }
 
 fn read_instructions(iter: &mut Iter<u8>) -> Result<Vec<Instruction>, ProgramError> {
-    let instruction_count = *read_u8(iter).ok_or(ProgramError::InvalidInstructionData)?;
+    let instruction_count = read_u16(iter).ok_or(ProgramError::InvalidInstructionData)?;
     Ok((0..instruction_count)
         .map(|_| read_instruction(iter).unwrap())
         .collect())
@@ -841,7 +841,7 @@ fn read_instruction(iter: &mut Iter<u8>) -> Result<Instruction, ProgramError> {
             .ok_or(ProgramError::InvalidInstructionData)?
             .into(),
     );
-    let account_count = *read_u8(iter).ok_or(ProgramError::InvalidInstructionData)?;
+    let account_count = read_u16(iter).ok_or(ProgramError::InvalidInstructionData)?;
     let accounts = (0..account_count)
         .map(|_| {
             let flags = *read_u8(iter)
@@ -862,7 +862,7 @@ fn read_instruction(iter: &mut Iter<u8>) -> Result<Instruction, ProgramError> {
             }
         })
         .collect();
-    let data_len = read_u32(iter).ok_or(ProgramError::InvalidInstructionData)?;
+    let data_len = read_u16(iter).ok_or(ProgramError::InvalidInstructionData)?;
     let data = read_slice(iter, data_len.try_into().unwrap())
         .ok_or(ProgramError::InvalidInstructionData)?
         .to_vec();
@@ -875,14 +875,14 @@ fn read_instruction(iter: &mut Iter<u8>) -> Result<Instruction, ProgramError> {
 
 pub fn append_instruction(instruction: &Instruction, dst: &mut Vec<u8>) {
     dst.extend_from_slice(instruction.program_id.as_ref());
-    dst.push(instruction.accounts.len() as u8);
+    dst.put_u16_le(instruction.accounts.len() as u16);
     for account in instruction.accounts.iter() {
         let mut buf = vec![0; 1 + Signer::LEN];
         buf[0] = if account.is_signer { 2 } else { 0 } + if account.is_writable { 1 } else { 0 };
         Signer::new(account.pubkey).pack_into_slice(&mut buf[1..1 + Signer::LEN]);
         dst.extend_from_slice(buf.as_slice());
     }
-    dst.put_u32_le(instruction.data.len().as_u32());
+    dst.put_u16_le(instruction.data.len().as_u16());
     dst.extend_from_slice(instruction.data.as_slice());
 }
 
