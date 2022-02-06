@@ -878,7 +878,13 @@ pub fn append_instruction(instruction: &Instruction, dst: &mut Vec<u8>) {
     dst.put_u16_le(instruction.accounts.len() as u16);
     for account in instruction.accounts.iter() {
         let mut buf = vec![0; 1 + Signer::LEN];
-        buf[0] = if account.is_signer { 2 } else { 0 } + if account.is_writable { 1 } else { 0 };
+        buf[0] = 0;
+        if account.is_signer {
+            buf[0] |= 2;
+        }
+        if account.is_writable {
+            buf[0] |= 1;
+        }
         Signer::new(account.pubkey).pack_into_slice(&mut buf[1..1 + Signer::LEN]);
         dst.extend_from_slice(buf.as_slice());
     }
