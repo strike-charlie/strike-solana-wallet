@@ -195,7 +195,7 @@ pub enum ProgramInstruction {
         instructions: Vec<Instruction>,
     },
     /// 0  `[writable]` The multisig operation account
-    /// 1. `[]` The program config account
+    /// 1. `[]` The wallet account
     /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
     /// 3. `[]` The sysvar clock account
     InitWhitelistStatusUpdate {
@@ -204,7 +204,7 @@ pub enum ProgramInstruction {
     },
 
     /// 0  `[writable]` The multisig operation account
-    /// 1. `[writable]` The program config account
+    /// 1. `[writable]` The wallet account
     /// 2. `[signer]` The rent collector account
     FinalizeWhitelistStatusUpdate {
         account_guid_hash: BalanceAccountGuidHash,

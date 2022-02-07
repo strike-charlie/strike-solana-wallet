@@ -150,7 +150,7 @@ impl Wallet {
         address: &Pubkey,
         name_hash: &AddressBookEntryNameHash,
     ) -> Result<bool, ProgramError> {
-        Ok(balance_account.whitelist_disabled()
+        Ok(balance_account.is_whitelist_disabled()
             || match self.address_book.find_id(&AddressBookEntry {
                 address: *address,
                 name_hash: *name_hash,
@@ -371,7 +371,7 @@ impl Wallet {
             balance_account.approval_timeout_for_transfer = update.approval_timeout_for_transfer;
         }
 
-        if !update.add_allowed_destinations.is_empty() && balance_account.whitelist_disabled() {
+        if !update.add_allowed_destinations.is_empty() && balance_account.is_whitelist_disabled() {
             msg!("Cannot add destinations when whitelisting status is Off");
             return Err(WalletError::WhitelistingStatusOff.into());
         }

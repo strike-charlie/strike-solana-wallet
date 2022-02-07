@@ -134,7 +134,7 @@ impl Pack for BalanceAccount {
 }
 
 impl BalanceAccount {
-    pub fn whitelist_disabled(&self) -> bool {
+    pub fn is_whitelist_disabled(&self) -> bool {
         return self.whitelist_status == WhitelistStatus::Off;
     }
 
