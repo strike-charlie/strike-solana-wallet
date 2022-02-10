@@ -853,7 +853,7 @@ async fn test_balance_account_creation() {
     assert_eq!(balance_account.approvals_required_for_transfer, 2);
     assert_eq!(
         balance_account.approval_timeout_for_transfer,
-        Duration::from_secs(1800)
+        Duration::from_secs(120)
     );
 
     // verify the multisig op account is closed

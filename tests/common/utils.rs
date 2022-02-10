@@ -1045,6 +1045,7 @@ pub async fn setup_balance_account_tests(
     let balance_account_guid_hash =
         BalanceAccountGuidHash::new(&hash_of(Uuid::new_v4().as_bytes()));
     let balance_account_name_hash = BalanceAccountNameHash::new(&hash_of(b"Account Name"));
+    let approval_timeout_for_transfer = Duration::from_secs(120);
 
     let mut transfer_approvers = vec![
         (SlotId::new(0), approvers[0].pubkey_as_signer()),
@@ -1053,6 +1054,7 @@ pub async fn setup_balance_account_tests(
     if add_extra_transfer_approver {
         transfer_approvers.append(&mut vec![(SlotId::new(2), approvers[2].pubkey_as_signer())])
     }
+
 
     let init_transaction = Transaction::new_signed_with_payer(
         &[
@@ -1071,7 +1073,7 @@ pub async fn setup_balance_account_tests(
                 balance_account_guid_hash,
                 balance_account_name_hash,
                 2,
-                Duration::from_secs(1800),
+                approval_timeout_for_transfer,
                 transfer_approvers.clone(),
                 vec![],
             ),
@@ -1114,7 +1116,7 @@ pub async fn setup_balance_account_tests(
     let expected_update = BalanceAccountUpdate {
         name_hash: balance_account_name_hash,
         approvals_required_for_transfer: 2,
-        approval_timeout_for_transfer: Duration::from_secs(1800),
+        approval_timeout_for_transfer: approval_timeout_for_transfer,
         add_transfer_approvers: transfer_approvers.clone(),
         remove_transfer_approvers: vec![],
         add_allowed_destinations: vec![],
