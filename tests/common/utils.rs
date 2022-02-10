@@ -188,12 +188,11 @@ pub async fn finalize_multisig_op(
 }
 
 pub async fn get_multisig_op_data(
-    test_context: &mut TestContext,
+    banks_client: &mut BanksClient,
     account_address: Pubkey,
 ) -> MultisigOp {
     return MultisigOp::unpack_from_slice(
-        test_context
-            .banks_client
+        banks_client
             .get_account(account_address)
             .await
             .unwrap()
@@ -410,7 +409,11 @@ pub async fn setup_wallet_update_test() -> WalletUpdateContext {
         remove_address_book_entries: vec![(SlotId::new(0), address_book_entry)],
     };
 
-    let multisig_op = get_multisig_op_data(&mut test_context, multisig_op_account.pubkey()).await;
+    let multisig_op = get_multisig_op_data(
+        &mut test_context.banks_client,
+        multisig_op_account.pubkey()
+    ).await;
+
     assert!(multisig_op.is_initialized);
 
     WalletUpdateContext {
@@ -1305,6 +1308,7 @@ pub async fn setup_transfer_test(
     let rent = context.banks_client.get_rent().await.unwrap();
     let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
     let multisig_op_account = Keypair::new();
+    let initialized_at = SystemTime::now();
 
     let result = context
         .banks_client
@@ -1340,6 +1344,12 @@ pub async fn setup_transfer_test(
             context.recent_blockhash,
         ))
         .await;
+
+    assert_multisig_op_timestamps(
+        &get_multisig_op_data(&mut context.banks_client, multisig_op_account.pubkey()).await,
+        initialized_at,
+        Duration::from_secs(120)
+    );
 
     (multisig_op_account, result)
 }

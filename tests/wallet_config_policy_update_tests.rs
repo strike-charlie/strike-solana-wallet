@@ -76,7 +76,7 @@ async fn wallet_config_policy_update() {
     .unwrap();
 
     assert_initialized_multisig_op(
-        &get_multisig_op_data(&mut context, multisig_op_account).await,
+        &get_multisig_op_data(&mut context.banks_client, multisig_op_account).await,
         started_at,
         Duration::from_secs(3600),
         2,
