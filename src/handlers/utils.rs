@@ -81,7 +81,7 @@ pub fn start_multisig_transfer_op(
         wallet.get_transfer_approvers_keys(balance_account),
         balance_account.approvals_required_for_transfer,
         clock.unix_timestamp,
-        calculate_expires(clock.unix_timestamp, wallet.approval_timeout_for_config)?,
+        calculate_expires(clock.unix_timestamp, balance_account.approval_timeout_for_transfer)?,
         params,
     )?;
     MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
