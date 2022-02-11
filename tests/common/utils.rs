@@ -409,10 +409,8 @@ pub async fn setup_wallet_update_test() -> WalletUpdateContext {
         remove_address_book_entries: vec![(SlotId::new(0), address_book_entry)],
     };
 
-    let multisig_op = get_multisig_op_data(
-        &mut test_context.banks_client,
-        multisig_op_account.pubkey()
-    ).await;
+    let multisig_op =
+        get_multisig_op_data(&mut test_context.banks_client, multisig_op_account.pubkey()).await;
 
     assert!(multisig_op.is_initialized);
 
@@ -1058,7 +1056,6 @@ pub async fn setup_balance_account_tests(
         transfer_approvers.append(&mut vec![(SlotId::new(2), approvers[2].pubkey_as_signer())])
     }
 
-
     let init_transaction = Transaction::new_signed_with_payer(
         &[
             system_instruction::create_account(
@@ -1119,7 +1116,7 @@ pub async fn setup_balance_account_tests(
     let expected_update = BalanceAccountUpdate {
         name_hash: balance_account_name_hash,
         approvals_required_for_transfer: 2,
-        approval_timeout_for_transfer: approval_timeout_for_transfer,
+        approval_timeout_for_transfer,
         add_transfer_approvers: transfer_approvers.clone(),
         remove_transfer_approvers: vec![],
         add_allowed_destinations: vec![],
@@ -1345,11 +1342,13 @@ pub async fn setup_transfer_test(
         ))
         .await;
 
-    assert_multisig_op_timestamps(
-        &get_multisig_op_data(&mut context.banks_client, multisig_op_account.pubkey()).await,
-        initialized_at,
-        Duration::from_secs(120)
-    );
+    if result.is_ok() {
+        assert_multisig_op_timestamps(
+            &get_multisig_op_data(&mut context.banks_client, multisig_op_account.pubkey()).await,
+            initialized_at,
+            Duration::from_secs(120),
+        );
+    }
 
     (multisig_op_account, result)
 }
@@ -1382,7 +1381,7 @@ pub async fn modify_whitelist(
                 context.balance_account_guid_hash,
                 context.balance_account_name_hash,
                 2,
-                Duration::from_secs(7200),
+                Duration::from_secs(120),
                 vec![],
                 vec![],
                 destinations_to_add.clone(),
@@ -1432,7 +1431,7 @@ pub async fn modify_whitelist(
     let expected_config_update = BalanceAccountUpdate {
         name_hash: context.balance_account_name_hash,
         approvals_required_for_transfer: 2,
-        approval_timeout_for_transfer: Duration::from_secs(7200),
+        approval_timeout_for_transfer: Duration::from_secs(120),
         add_transfer_approvers: vec![],
         remove_transfer_approvers: vec![],
         add_allowed_destinations: destinations_to_add,
