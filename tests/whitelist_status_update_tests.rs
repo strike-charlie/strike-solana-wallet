@@ -5,7 +5,7 @@ mod common;
 pub use common::instructions::*;
 pub use common::utils::*;
 
-use solana_program::instruction::InstructionError::{Custom, InvalidArgument};
+use solana_program::instruction::InstructionError::Custom;
 use solana_program_test::tokio;
 use solana_sdk::transaction::TransactionError;
 use std::borrow::BorrowMut;
@@ -50,7 +50,7 @@ async fn test_whitelist_status() {
         &mut context,
         Some(BooleanSetting::Off),
         None,
-        Some(InvalidArgument),
+        Some(Custom(WalletError::WhitelistedAddressInUse as u32)),
     )
     .await;
 

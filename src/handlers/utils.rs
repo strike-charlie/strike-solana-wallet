@@ -41,7 +41,7 @@ pub fn get_clock_from_next_account(iter: &mut Iter<AccountInfo>) -> Result<Clock
     let account_info = next_account_info(iter)?;
     if solana_program::sysvar::clock::id() != *account_info.key {
         msg!("Invalid clock account");
-        return Err(ProgramError::InvalidArgument);
+        return Err(WalletError::AccountNotRecognized.into());
     }
     Clock::from_account_info(&account_info)
 }
@@ -49,6 +49,7 @@ pub fn get_clock_from_next_account(iter: &mut Iter<AccountInfo>) -> Result<Clock
 pub fn calculate_expires(start: i64, duration: Duration) -> Result<i64, ProgramError> {
     let expires_at = start.checked_add(duration.as_secs() as i64);
     if expires_at == None {
+        msg!("Invalid expires_at");
         return Err(ProgramError::InvalidArgument);
     }
     Ok(expires_at.unwrap())
@@ -81,7 +82,10 @@ pub fn start_multisig_transfer_op(
         wallet.get_transfer_approvers_keys(balance_account),
         balance_account.approvals_required_for_transfer,
         clock.unix_timestamp,
-        calculate_expires(clock.unix_timestamp, balance_account.approval_timeout_for_transfer)?,
+        calculate_expires(
+            clock.unix_timestamp,
+            balance_account.approval_timeout_for_transfer,
+        )?,
         params,
     )?;
     MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;

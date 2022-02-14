@@ -144,7 +144,7 @@ impl Wallet {
             Ok(())
         } else {
             msg!("Transactions can only be initiated by an authorized account");
-            Err(ProgramError::InvalidArgument)
+            Err(WalletError::InvalidApprover.into())
         }
     }
 
@@ -213,19 +213,19 @@ impl Wallet {
                 update.approvals_required_for_config,
                 approvers_count_after_update
             );
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidApproverCount.into());
         }
 
         Wallet::validate_approval_timeout(&self.approval_timeout_for_config)?;
 
         if self.approvals_required_for_config == 0 {
             msg!("Approvals required for config can't be 0");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidApproverCount.into());
         }
 
         if self.config_approvers.count_enabled() == 0 {
             msg!("At least one config approver has to be configured");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::NoApproversEnabled.into());
         }
 
         Ok(())
@@ -255,6 +255,7 @@ impl Wallet {
     pub fn update_config_policy(&mut self, update: &WalletConfigPolicyUpdate) -> ProgramResult {
         self.approvals_required_for_config = update.approvals_required_for_config;
         if update.approval_timeout_for_config.as_secs() > 0 {
+            Wallet::validate_approval_timeout(&update.approval_timeout_for_config)?;
             self.approval_timeout_for_config = update.approval_timeout_for_config;
         }
 
@@ -263,12 +264,7 @@ impl Wallet {
 
         if self.approvals_required_for_config == 0 {
             msg!("Approvals required for config can't be 0");
-            return Err(ProgramError::InvalidArgument);
-        }
-
-        if self.approval_timeout_for_config.as_secs() == 0 {
-            msg!("Approvals timeout for config can't be 0");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidApproverCount.into());
         }
 
         let approvers_count = self.config_approvers.count_enabled();
@@ -278,7 +274,7 @@ impl Wallet {
                 update.approvals_required_for_config,
                 approvers_count
             );
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidApproverCount.into());
         }
 
         Ok(())
@@ -339,7 +335,7 @@ impl Wallet {
         if status == BooleanSetting::Off {
             if self.balance_accounts[balance_account_idx].has_whitelisted_destinations() {
                 msg!("Cannot turn whitelist status to off as there are whitelisted addresses");
-                return Err(ProgramError::InvalidArgument);
+                return Err(WalletError::WhitelistedAddressInUse.into());
             }
         }
 
@@ -399,17 +395,17 @@ impl Wallet {
                 update.approvals_required_for_transfer,
                 approvers_count_after_update
             );
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidApproverCount.into());
         }
 
         if balance_account.approvals_required_for_transfer == 0 {
             msg!("Approvals required for transfer can't be 0");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidApproverCount.into());
         }
 
         if balance_account.transfer_approvers.count_enabled() == 0 {
             msg!("At least one transfer approver has to be configured");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::NoApproversEnabled.into());
         }
 
         Ok(())
@@ -418,7 +414,7 @@ impl Wallet {
     fn add_signers(&mut self, signers_to_add: &Vec<(SlotId<Signer>, Signer)>) -> ProgramResult {
         if !self.signers.can_be_inserted(signers_to_add) {
             msg!("Failed to add signers: at least one of the provided slots is already taken");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::SlotAlreadyInUse.into());
         }
         self.signers.insert_many(signers_to_add);
         Ok(())
@@ -430,18 +426,18 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.signers.can_be_removed(signers_to_remove) {
             msg!("Failed to remove signers: at least one of the provided signers is not present in the config");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::UnknownSigner.into());
         }
         let slot_ids = signers_to_remove.slot_ids();
 
         if self.config_approvers.any_enabled(&slot_ids) {
             msg!("Failed to remove signers: not allowed to remove a config approving signer");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidSlot.into());
         };
         for balance_account in &self.balance_accounts {
             if balance_account.transfer_approvers.any_enabled(&slot_ids) {
                 msg!("Failed to remove signers: not allowed to remove a transfer approving signer");
-                return Err(ProgramError::InvalidArgument);
+                return Err(WalletError::InvalidSlot.into());
             }
         }
         self.signers.remove_many(signers_to_remove);
@@ -454,7 +450,7 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.address_book.can_be_inserted(entries_to_add) {
             msg!("Failed to add address book entries: at least one of the provided slots is already taken");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidSlot.into());
         }
         self.address_book.insert_many(entries_to_add);
         Ok(())
@@ -466,13 +462,13 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.address_book.can_be_removed(entries_to_remove) {
             msg!("Failed to remove address book entries: at least one of the provided entries is not present in the config");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidSlot.into());
         }
         let slot_ids = entries_to_remove.slot_ids();
         for balance_account in &self.balance_accounts {
             if balance_account.allowed_destinations.any_enabled(&slot_ids) {
-                msg!("Failed to remove address book entries: not allowed to remove an allowed address book entry");
-                return Err(ProgramError::InvalidArgument);
+                msg!("Failed to remove address book entries: at least one address is currently in use");
+                return Err(WalletError::SlotAlreadyInUse.into());
             }
         }
         self.address_book.remove_many(entries_to_remove);
@@ -485,7 +481,7 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.dapp_book.can_be_inserted(entries_to_add) {
             msg!("Failed to add dapp book entries: at least one of the provided slots is already taken");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::SlotAlreadyInUse.into());
         }
         self.dapp_book.insert_many(entries_to_add);
         Ok(())
@@ -497,7 +493,7 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.dapp_book.can_be_removed(entries_to_remove) {
             msg!("Failed to remove dapp book entries: at least one of the provided entries is not present in the config");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidSlot.into());
         }
         self.dapp_book.remove_many(entries_to_remove);
         Ok(())
@@ -509,7 +505,7 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.signers.contains(approvers) {
             msg!("Failed to enable config approvers: one of the given config approvers is not configured as signer");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::UnknownSigner.into());
         }
         self.config_approvers.enable_many(&approvers.slot_ids());
         Ok(())
@@ -524,7 +520,7 @@ impl Wallet {
                 self.config_approvers.disable(id);
             } else {
                 msg!("Failed to disable config approvers: unexpected slot value");
-                return Err(ProgramError::InvalidArgument);
+                return Err(WalletError::InvalidSlot.into());
             }
         }
         Ok(())
@@ -537,7 +533,7 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.signers.contains(approvers) {
             msg!("Failed to enable transfer approvers: one of the given transfer approvers is not configured as signer");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::UnknownSigner.into());
         }
         self.balance_accounts[balance_account_index]
             .transfer_approvers
@@ -557,7 +553,7 @@ impl Wallet {
                     .disable(id);
             } else {
                 msg!("Failed to disable transfer approvers: unexpected slot value");
-                return Err(ProgramError::InvalidArgument);
+                return Err(WalletError::InvalidSlot.into());
             }
         }
         Ok(())
@@ -570,7 +566,7 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.address_book.contains(destinations) {
             msg!("Failed to enable transfer destinations: address book does not contain one of the given destinations");
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::InvalidSlot.into());
         }
         self.balance_accounts[balance_account_index]
             .allowed_destinations
@@ -591,7 +587,7 @@ impl Wallet {
                     .disable(id);
             } else {
                 msg!("Failed to disable transfer destinations: unexpected slot value");
-                return Err(ProgramError::InvalidArgument);
+                return Err(WalletError::InvalidSlot.into());
             }
         }
         Ok(())

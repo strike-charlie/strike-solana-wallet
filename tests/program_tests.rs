@@ -7,9 +7,7 @@ use std::borrow::BorrowMut;
 use std::time::{Duration, SystemTime};
 
 use solana_program::hash::Hash;
-use solana_program::instruction::InstructionError::{
-    Custom, InvalidArgument, MissingRequiredSignature,
-};
+use solana_program::instruction::InstructionError::{Custom, MissingRequiredSignature};
 use solana_program::system_program;
 use solana_sdk::transaction::TransactionError;
 
@@ -20,7 +18,6 @@ use common::instructions::{
     set_approval_disposition,
 };
 use itertools::Itertools;
-use solana_program::instruction::InstructionError;
 use std::collections::HashSet;
 use strike_wallet::error::WalletError;
 use strike_wallet::instruction::BalanceAccountUpdate;
@@ -313,7 +310,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 Vec::new(),
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidApproverCount as u32),
         )
         .await;
     }
@@ -340,7 +337,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 Vec::new(),
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::SlotAlreadyInUse as u32),
         )
         .await;
     }
@@ -367,7 +364,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 Vec::new(),
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::UnknownSigner as u32),
         )
         .await;
     }
@@ -394,7 +391,7 @@ async fn invalid_wallet_updates() {
                 vec![(SlotId::new(0), new_address_book_entry)],
                 Vec::new(),
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidSlot as u32),
         )
         .await;
     }
@@ -421,7 +418,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 vec![(SlotId::new(0), new_address_book_entry)],
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidSlot as u32),
         )
         .await;
     }
@@ -448,11 +445,11 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 Vec::new(),
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::UnknownSigner as u32),
         )
         .await;
     }
-    // verify it's not allowed to add a config approver when provided slot value does not match the stored one
+    // verify it's not allowed to add a config approver who is not a signer.
     {
         let multisig_op_account = Keypair::new();
         verify_multisig_op_init_fails(
@@ -475,7 +472,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 Vec::new(),
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::UnknownSigner as u32),
         )
         .await;
     }
@@ -502,7 +499,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 Vec::new(),
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidSlot as u32),
         )
         .await;
     }
@@ -740,7 +737,7 @@ async fn test_add_and_remove_signer_init_failures() {
         1,
         signer_to_add_and_remove,
         None,
-        Some(InvalidArgument),
+        Some(Custom(WalletError::SlotAlreadyInUse as u32)),
     )
     .await;
 
@@ -751,7 +748,7 @@ async fn test_add_and_remove_signer_init_failures() {
         1,
         signer_to_add_and_remove,
         None,
-        Some(InvalidArgument),
+        Some(Custom(WalletError::UnknownSigner as u32)),
     )
     .await;
 
@@ -763,7 +760,7 @@ async fn test_add_and_remove_signer_init_failures() {
         1,
         signer_to_add_and_remove,
         None,
-        Some(InvalidArgument),
+        Some(Custom(WalletError::InvalidSlot as u32)),
     )
     .await;
 }
@@ -802,7 +799,7 @@ async fn test_remove_signer_fails_for_a_transfer_approver() {
             SlotId::new(2),
             context.approvers[2].pubkey_as_signer(),
         ),
-        InstructionError::InvalidArgument,
+        Custom(WalletError::InvalidSlot as u32),
     )
     .await;
 }
@@ -907,7 +904,7 @@ async fn test_balance_account_creation_fails_if_no_approvers() {
     assert_eq!(
         setup_create_balance_account_failure_tests(None, 1, Duration::from_secs(18000), vec![])
             .await,
-        TransactionError::InstructionError(1, InvalidArgument)
+        TransactionError::InstructionError(1, Custom(WalletError::InvalidApproverCount as u32))
     )
 }
 
@@ -921,7 +918,7 @@ async fn test_balance_account_creation_fails_if_num_approvals_required_not_set()
             vec![Pubkey::new_unique()]
         )
         .await,
-        TransactionError::InstructionError(1, InvalidArgument)
+        TransactionError::InstructionError(1, Custom(WalletError::InvalidApproverCount as u32))
     )
 }
 
@@ -1443,7 +1440,7 @@ async fn invalid_balance_account_updates() {
                 vec![],
                 vec![],
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidApproverCount as u32),
         )
         .await;
     }
@@ -1470,11 +1467,11 @@ async fn invalid_balance_account_updates() {
                 vec![],
                 vec![],
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::UnknownSigner as u32),
         )
         .await;
     }
-    // verify it's not allowed to add a transfer approver when provided slot value does not match the stored one
+    // verify it's not allowed to add a transfer approver that isn't configured as a signer.
     {
         let multisig_op_account = Keypair::new();
         verify_multisig_op_init_fails(
@@ -1497,7 +1494,7 @@ async fn invalid_balance_account_updates() {
                 vec![],
                 vec![],
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::UnknownSigner as u32),
         )
         .await;
     }
@@ -1524,7 +1521,7 @@ async fn invalid_balance_account_updates() {
                 vec![],
                 vec![],
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidSlot as u32),
         )
         .await;
     }
@@ -1557,7 +1554,7 @@ async fn invalid_balance_account_updates() {
                 )],
                 vec![],
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidSlot as u32),
         )
         .await;
     }
@@ -1587,7 +1584,7 @@ async fn invalid_balance_account_updates() {
                 )],
                 vec![],
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidSlot as u32),
         )
         .await;
     }
@@ -1617,7 +1614,7 @@ async fn invalid_balance_account_updates() {
                     wallet.address_book.filled_slots()[1].1,
                 )],
             ),
-            InstructionError::InvalidArgument,
+            Custom(WalletError::InvalidSlot as u32),
         )
         .await;
     }

@@ -537,7 +537,7 @@ impl Processor {
         let is_spl = token_mint.to_bytes() != [0; 32];
 
         if system_program_account.key != &system_program::id() {
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::AccountNotRecognized.into());
         }
 
         finalize_multisig_op(
@@ -714,7 +714,7 @@ impl Processor {
         let wrapped_sol_account_info = next_account_info(accounts_iter)?;
 
         if system_program_account_info.key != &system_program::id() {
-            return Err(ProgramError::InvalidArgument);
+            return Err(WalletError::AccountNotRecognized.into());
         }
 
         finalize_multisig_op(

@@ -1,10 +1,11 @@
 #![cfg(feature = "test-bpf")]
+
 mod common;
+
 pub use common::instructions::*;
+pub use common::utils;
 pub use common::utils::*;
 
-pub use common::utils;
-use solana_program::instruction::InstructionError;
 use solana_program::instruction::InstructionError::Custom;
 use solana_program_test::tokio;
 use solana_sdk::signature::Keypair;
@@ -323,7 +324,7 @@ async fn invalid_wallet_config_policy_updates() {
         )
         .await,
         1,
-        InstructionError::InvalidArgument,
+        Custom(WalletError::InvalidApproverCount as u32),
     );
 
     // verify it's not allowed to add a config approver that is not configured as signer
@@ -341,10 +342,10 @@ async fn invalid_wallet_config_policy_updates() {
         )
         .await,
         1,
-        InstructionError::InvalidArgument,
+        Custom(WalletError::UnknownSigner as u32),
     );
 
-    // verify it's not allowed to add a config approver when provided slot value does not match the stored one
+    // verify it's not allowed to add a config approver who isn't a signer.
     assert_instruction_error(
         utils::init_wallet_config_policy_update(
             &mut context,
@@ -359,9 +360,8 @@ async fn invalid_wallet_config_policy_updates() {
         )
         .await,
         1,
-        InstructionError::InvalidArgument,
+        Custom(WalletError::UnknownSigner as u32),
     );
-
     // verify it's not allowed to remove a config approver when provided slot value does not match the stored one
     assert_instruction_error(
         utils::init_wallet_config_policy_update(
@@ -377,6 +377,6 @@ async fn invalid_wallet_config_policy_updates() {
         )
         .await,
         1,
-        InstructionError::InvalidArgument,
+        Custom(WalletError::InvalidSlot as u32),
     );
 }
