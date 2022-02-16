@@ -1,7 +1,7 @@
 #![cfg(feature = "test-bpf")]
 mod common;
-pub use common::utils::*;
 pub use common::instructions::*;
+pub use common::utils::*;
 
 pub use common::utils;
 use solana_program::instruction::InstructionError;
@@ -129,6 +129,7 @@ async fn wallet_config_policy_update() {
             config_approvers: Approvers::from_enabled_vec(vec![SlotId::new(1), SlotId::new(2)]),
             balance_accounts: wallet.balance_accounts,
             config_policy_update_locked: false,
+            dapp_book: wallet.dapp_book,
         },
         get_wallet(&mut context.banks_client, &wallet_account.pubkey()).await
     );

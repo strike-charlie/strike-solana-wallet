@@ -1,11 +1,14 @@
+use std::fmt::Debug;
+use std::iter::Map;
+use std::marker::PhantomData;
+use std::ops::Index;
+use std::slice::Iter;
+
 use bitvec::prelude::*;
 use bitvec::slice::IterOnes;
 use itertools::Itertools;
 use solana_program::program_error::ProgramError;
-use solana_program::program_pack::{Pack, Sealed};
-use std::iter::Map;
-use std::marker::PhantomData;
-use std::ops::Index;
+use solana_program::program_pack::{IsInitialized, Pack, Sealed};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct SlotId<A> {
@@ -225,4 +228,48 @@ impl<A> GetSlotIds<A> for Vec<(SlotId<A>, A)> {
     fn slot_ids(&self) -> Vec<&SlotId<A>> {
         self.iter().map(|(slot_id, _)| slot_id).collect_vec()
     }
+}
+
+pub fn pack_option<T>(option: Option<&T>, dst: &mut Vec<u8>)
+where
+    T: Pack + Default + Clone,
+{
+    let mut buf: Vec<u8> = Vec::with_capacity(T::LEN);
+    buf.resize(T::LEN, 0);
+    if let Some(value) = option {
+        dst.push(1);
+        Pack::pack(value.clone(), buf.as_mut_slice()).unwrap();
+    } else {
+        dst.push(0);
+        Pack::pack(T::default(), buf.as_mut_slice()).unwrap();
+    }
+    dst.extend_from_slice(&buf);
+}
+
+pub fn unpack_option<T>(iter: &mut Iter<u8>) -> Result<Option<T>, ProgramError>
+where
+    T: Pack + IsInitialized,
+{
+    if let Some(has_value) = iter.next() {
+        let value_data = read_slice(iter, T::LEN)
+            .ok_or(ProgramError::InvalidInstructionData)
+            .unwrap();
+        Ok(if *has_value == 0 {
+            None
+        } else {
+            Some(T::unpack(value_data)?)
+        })
+    } else {
+        Err(ProgramError::InvalidInstructionData)
+    }
+}
+
+pub fn read_slice<'a>(iter: &'a mut Iter<u8>, size: usize) -> Option<&'a [u8]> {
+    let slice = iter.as_slice().get(0..size);
+    if slice.is_some() {
+        for _ in 0..size {
+            iter.next();
+        }
+    }
+    return slice;
 }

@@ -1,5 +1,5 @@
 use crate::model::address_book::{AddressBook, AddressBookEntry};
-use crate::model::multisig_op::WhitelistStatus;
+use crate::model::multisig_op::BooleanSetting;
 use crate::model::wallet::Approvers;
 use crate::utils::SlotFlags;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
@@ -8,6 +8,9 @@ use solana_program::program_pack::{Pack, Sealed};
 use std::time::Duration;
 
 pub type AllowedDestinations = SlotFlags<AddressBookEntry, { AddressBook::FLAGS_STORAGE_SIZE }>;
+
+const WHITELIST_SETTING_BIT: u8 = 0;
+const DAPPS_SETTING_BIT: u8 = 1;
 
 #[derive(Debug, Clone, Eq, PartialEq, Copy)]
 pub struct BalanceAccountGuidHash([u8; 32]);
@@ -51,7 +54,8 @@ pub struct BalanceAccount {
     pub approval_timeout_for_transfer: Duration,
     pub transfer_approvers: Approvers,
     pub allowed_destinations: AllowedDestinations,
-    pub whitelist_status: WhitelistStatus,
+    pub whitelist_status: BooleanSetting,
+    pub dapps_enabled: BooleanSetting,
 }
 
 impl Sealed for BalanceAccount {}
@@ -63,7 +67,7 @@ impl Pack for BalanceAccount {
         8 + // approval_timeout_for_transfer
         Approvers::STORAGE_SIZE + // transfer approvers
         AllowedDestinations::STORAGE_SIZE +  // allowed destinations
-        1; // whitelist status
+        1; // boolean settings
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let dst = array_mut_ref![dst, 0, BalanceAccount::LEN];
@@ -74,7 +78,7 @@ impl Pack for BalanceAccount {
             approval_timeout_for_transfer_dst,
             approvers_dst,
             allowed_destinations_dst,
-            whitelist_status_dst,
+            boolean_settings_dst,
         ) = mut_array_refs![
             dst,
             32,
@@ -95,7 +99,8 @@ impl Pack for BalanceAccount {
 
         approvers_dst.copy_from_slice(self.transfer_approvers.as_bytes());
         allowed_destinations_dst.copy_from_slice(self.allowed_destinations.as_bytes());
-        whitelist_status_dst[0] = self.whitelist_status.to_u8()
+        boolean_settings_dst[0] |= self.whitelist_status.to_u8() << WHITELIST_SETTING_BIT;
+        boolean_settings_dst[0] |= self.dapps_enabled.to_u8() << DAPPS_SETTING_BIT;
     }
 
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
@@ -107,7 +112,7 @@ impl Pack for BalanceAccount {
             approval_timeout_for_transfer_src,
             approvers_src,
             allowed_destinations_src,
-            whitelist_status_src,
+            boolean_settings_src,
         ) = array_refs![
             src,
             32,
@@ -128,14 +133,23 @@ impl Pack for BalanceAccount {
             )),
             transfer_approvers: Approvers::new(*approvers_src),
             allowed_destinations: AllowedDestinations::new(*allowed_destinations_src),
-            whitelist_status: WhitelistStatus::from_u8(whitelist_status_src[0]),
+            whitelist_status: BooleanSetting::from_u8(
+                boolean_settings_src[0] & (1 << WHITELIST_SETTING_BIT),
+            ),
+            dapps_enabled: BooleanSetting::from_u8(
+                boolean_settings_src[0] & (1 << DAPPS_SETTING_BIT),
+            ),
         })
     }
 }
 
 impl BalanceAccount {
     pub fn is_whitelist_disabled(&self) -> bool {
-        return self.whitelist_status == WhitelistStatus::Off;
+        return self.whitelist_status == BooleanSetting::Off;
+    }
+
+    pub fn are_dapps_disabled(&self) -> bool {
+        return self.dapps_enabled == BooleanSetting::Off;
     }
 
     pub fn has_whitelisted_destinations(&self) -> bool {

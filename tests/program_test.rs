@@ -24,11 +24,13 @@ use solana_program::instruction::InstructionError;
 use std::collections::HashSet;
 use strike_wallet::error::WalletError;
 use strike_wallet::instruction::BalanceAccountUpdate;
-use strike_wallet::model::address_book::{AddressBook, AddressBookEntry, AddressBookEntryNameHash};
+use strike_wallet::model::address_book::{
+    AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook,
+};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
-    ApprovalDisposition, ApprovalDispositionRecord, OperationDisposition, SlotUpdateType,
-    WhitelistStatus,
+    ApprovalDisposition, ApprovalDispositionRecord, BooleanSetting, OperationDisposition,
+    SlotUpdateType,
 };
 use strike_wallet::model::signer::Signer;
 use strike_wallet::model::wallet::{Approvers, Signers, Wallet};
@@ -106,7 +108,8 @@ async fn init_wallet() {
                     .collect_vec()
             ),
             balance_accounts: Vec::new(),
-            config_policy_update_locked: false
+            config_policy_update_locked: false,
+            dapp_book: DAppBook::from_vec(vec![]),
         }
     );
 }
@@ -1013,7 +1016,7 @@ async fn test_balance_account_creation_incorrect_hash() {
 
 #[tokio::test]
 async fn test_balance_account_update() {
-    let mut context = setup_balance_account_tests(None, false).await;
+    let mut context = setup_balance_account_tests(Some(200000), false).await;
 
     approve_or_deny_1_of_2_multisig_op(
         context.banks_client.borrow_mut(),
@@ -1029,7 +1032,7 @@ async fn test_balance_account_update() {
 
     utils::finalize_balance_account_creation(context.borrow_mut()).await;
 
-    whitelist_status_update(&mut context, WhitelistStatus::On, None).await;
+    account_settings_update(&mut context, Some(BooleanSetting::On), None, None).await;
     let destination_to_add = context.allowed_destination;
     modify_whitelist(
         &mut context,
@@ -1211,7 +1214,7 @@ async fn test_balance_account_update_is_denied() {
 
     utils::finalize_balance_account_creation(context.borrow_mut()).await;
 
-    whitelist_status_update(&mut context, WhitelistStatus::On, None).await;
+    account_settings_update(&mut context, Some(BooleanSetting::On), None, None).await;
     let destination_to_add = context.allowed_destination;
     modify_whitelist(
         &mut context,
@@ -1809,7 +1812,7 @@ async fn test_transfer_sol_denied() {
 async fn test_transfer_wrong_destination_name_hash() {
     let (mut context, balance_account) = setup_balance_account_tests_and_finalize(None).await;
 
-    whitelist_status_update(&mut context, WhitelistStatus::On, None).await;
+    account_settings_update(&mut context, Some(BooleanSetting::On), None, None).await;
     let destination_to_add = context.allowed_destination;
     modify_whitelist(
         &mut context,
@@ -1955,7 +1958,7 @@ async fn test_transfer_insufficient_balance() {
 #[tokio::test]
 async fn test_transfer_unwhitelisted_address() {
     let (mut context, balance_account) = setup_balance_account_tests_and_finalize(None).await;
-    whitelist_status_update(&mut context, WhitelistStatus::On, None).await;
+    account_settings_update(&mut context, Some(BooleanSetting::On), None, None).await;
 
     let (_, result) = setup_transfer_test(context.borrow_mut(), &balance_account, None, None).await;
     assert_eq!(

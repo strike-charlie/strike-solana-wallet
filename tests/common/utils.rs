@@ -1,10 +1,9 @@
 use crate::common::instructions;
 use crate::common::instructions::{
-    finalize_balance_account_update, finalize_update_signer,
-    finalize_wallet_config_policy_update_instruction, finalize_whitelist_status_update,
+    finalize_account_settings_update, finalize_balance_account_update, finalize_update_signer,
+    finalize_wallet_config_policy_update_instruction, init_account_settings_update,
     init_balance_account_creation, init_balance_account_update, init_transfer, init_update_signer,
-    init_wallet_config_policy_update_instruction, init_wallet_update, init_whitelist_status_update,
-    set_approval_disposition,
+    init_wallet_config_policy_update_instruction, init_wallet_update, set_approval_disposition,
 };
 use arrayref::array_ref;
 use itertools::Itertools;
@@ -21,11 +20,13 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strike_wallet::instruction::{BalanceAccountUpdate, WalletConfigPolicyUpdate, WalletUpdate};
-use strike_wallet::model::address_book::{AddressBook, AddressBookEntry, AddressBookEntryNameHash};
+use strike_wallet::model::address_book::{
+    AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook,
+};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
-    ApprovalDisposition, ApprovalDispositionRecord, MultisigOp, MultisigOpParams,
-    OperationDisposition, SlotUpdateType, WhitelistStatus, WrapDirection,
+    ApprovalDisposition, ApprovalDispositionRecord, BooleanSetting, MultisigOp, MultisigOpParams,
+    OperationDisposition, SlotUpdateType, WrapDirection,
 };
 use strike_wallet::model::signer::Signer;
 use strike_wallet::model::wallet::{Approvers, Signers};
@@ -437,6 +438,7 @@ pub async fn setup_wallet_update_test() -> WalletUpdateContext {
             config_approvers: Approvers::from_enabled_vec(vec![SlotId::new(1), SlotId::new(2)]),
             balance_accounts: wallet.balance_accounts,
             config_policy_update_locked: false,
+            dapp_book: DAppBook::from_vec(vec![]),
         },
         assistant_account,
     }
@@ -624,9 +626,10 @@ pub async fn update_signer(
     );
 }
 
-pub async fn whitelist_status_update(
+pub async fn account_settings_update(
     context: &mut BalanceAccountTestContext,
-    status: WhitelistStatus,
+    whitelist_status: Option<BooleanSetting>,
+    dapps_enabled: Option<BooleanSetting>,
     expected_error: Option<InstructionError>,
 ) {
     let rent = context.banks_client.get_rent().await.unwrap();
@@ -641,13 +644,14 @@ pub async fn whitelist_status_update(
                 MultisigOp::LEN as u64,
                 &context.program_id,
             ),
-            init_whitelist_status_update(
+            init_account_settings_update(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
                 &context.assistant_account.pubkey(),
                 context.balance_account_guid_hash,
-                status,
+                whitelist_status,
+                dapps_enabled,
             ),
         ],
         Some(&context.payer.pubkey()),
@@ -711,10 +715,11 @@ pub async fn whitelist_status_update(
 
     assert_eq!(
         multisig_op.params_hash,
-        MultisigOpParams::WhitelistStatusUpdate {
+        MultisigOpParams::AccountSettingsUpdate {
             wallet_address: context.wallet_account.pubkey(),
             account_guid_hash: context.balance_account_guid_hash,
-            status
+            whitelist_status,
+            dapps_enabled,
         }
         .hash()
     );
@@ -749,13 +754,14 @@ pub async fn whitelist_status_update(
 
     // finalize the multisig op
     let finalize_transaction = Transaction::new_signed_with_payer(
-        &[finalize_whitelist_status_update(
+        &[finalize_account_settings_update(
             &context.program_id,
             &context.wallet_account.pubkey(),
             &multisig_op_account.pubkey(),
             &context.payer.pubkey(),
             context.balance_account_guid_hash,
-            status,
+            whitelist_status,
+            dapps_enabled,
         )],
         Some(&context.payer.pubkey()),
         &[&context.payer],
@@ -799,7 +805,7 @@ pub async fn whitelist_status_update(
 
 pub async fn verify_whitelist_status(
     context: &mut BalanceAccountTestContext,
-    expected_status: WhitelistStatus,
+    expected_status: BooleanSetting,
     expected_whitelist_count: usize,
 ) {
     let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
@@ -812,6 +818,18 @@ pub async fn verify_whitelist_status(
         account.allowed_destinations.count_enabled(),
         expected_whitelist_count
     );
+}
+
+pub async fn verify_dapps_enabled(
+    context: &mut BalanceAccountTestContext,
+    expected_enabled: BooleanSetting,
+) {
+    let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
+    let account = wallet
+        .get_balance_account(&context.balance_account_guid_hash)
+        .unwrap();
+
+    assert_eq!(account.dapps_enabled, expected_enabled);
 }
 
 pub async fn approve_or_deny_n_of_n_multisig_op(

@@ -11,7 +11,7 @@ use strike_wallet::instruction::{
 use strike_wallet::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
-    ApprovalDisposition, SlotUpdateType, WhitelistStatus, WrapDirection,
+    ApprovalDisposition, BooleanSetting, SlotUpdateType, WrapDirection,
 };
 use strike_wallet::model::signer::Signer;
 use strike_wallet::utils::SlotId;
@@ -663,37 +663,41 @@ pub fn finalize_dapp_transaction(
     }
 }
 
-pub fn init_whitelist_status_update(
+pub fn init_account_settings_update(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
     assistant_account: &Pubkey,
     account_guid_hash: BalanceAccountGuidHash,
-    status: WhitelistStatus,
+    whitelist_status: Option<BooleanSetting>,
+    dapps_enabled: Option<BooleanSetting>,
 ) -> Instruction {
     init_multisig_op(
         program_id,
         wallet_account,
         multisig_op_account,
         assistant_account,
-        ProgramInstruction::InitWhitelistStatusUpdate {
+        ProgramInstruction::InitAccountSettingsUpdate {
             account_guid_hash,
-            status,
+            whitelist_status,
+            dapps_enabled,
         },
     )
 }
 
-pub fn finalize_whitelist_status_update(
+pub fn finalize_account_settings_update(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
     rent_collector_account: &Pubkey,
     account_guid_hash: BalanceAccountGuidHash,
-    status: WhitelistStatus,
+    whitelist_status: Option<BooleanSetting>,
+    dapps_enabled: Option<BooleanSetting>,
 ) -> Instruction {
-    let data = ProgramInstruction::FinalizeWhitelistStatusUpdate {
+    let data = ProgramInstruction::FinalizeAccountSettingsUpdate {
         account_guid_hash,
-        status,
+        whitelist_status,
+        dapps_enabled,
     }
     .borrow()
     .pack();

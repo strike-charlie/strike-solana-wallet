@@ -5,7 +5,7 @@ use crate::instruction::{
 use crate::model::balance_account::BalanceAccountGuidHash;
 use crate::model::signer::Signer;
 use crate::model::wallet::Wallet;
-use crate::utils::SlotId;
+use crate::utils::{pack_option, SlotId};
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use bitvec::macros::internal::funty::Fundamental;
 use bytes::BufMut;
@@ -125,23 +125,53 @@ impl SlotUpdateType {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 #[repr(u8)]
-pub enum WhitelistStatus {
+pub enum BooleanSetting {
     Off = 0,
     On = 1,
 }
 
-impl WhitelistStatus {
-    pub fn from_u8(value: u8) -> WhitelistStatus {
+impl BooleanSetting {
+    pub fn from_u8(value: u8) -> BooleanSetting {
         match value {
-            0 => WhitelistStatus::Off,
-            _ => WhitelistStatus::On,
+            0 => BooleanSetting::Off,
+            _ => BooleanSetting::On,
         }
     }
 
     pub fn to_u8(&self) -> u8 {
         match self {
-            WhitelistStatus::Off => 0,
-            WhitelistStatus::On => 1,
+            BooleanSetting::Off => 0,
+            BooleanSetting::On => 1,
+        }
+    }
+}
+
+impl Sealed for BooleanSetting {}
+
+impl Default for BooleanSetting {
+    fn default() -> Self {
+        BooleanSetting::Off
+    }
+}
+
+impl IsInitialized for BooleanSetting {
+    fn is_initialized(&self) -> bool {
+        true
+    }
+}
+
+impl Pack for BooleanSetting {
+    const LEN: usize = 1;
+
+    fn pack_into_slice(&self, dst: &mut [u8]) {
+        dst[0] = self.to_u8();
+    }
+
+    fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
+        if src.len() == 0 {
+            Err(ProgramError::InvalidInstructionData)
+        } else {
+            Ok(BooleanSetting::from_u8(src[0]))
         }
     }
 }
@@ -448,10 +478,11 @@ pub enum MultisigOpParams {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,
     },
-    WhitelistStatusUpdate {
+    AccountSettingsUpdate {
         wallet_address: Pubkey,
         account_guid_hash: BalanceAccountGuidHash,
-        status: WhitelistStatus,
+        whitelist_status: Option<BooleanSetting>,
+        dapps_enabled: Option<BooleanSetting>,
     },
 }
 
@@ -608,17 +639,18 @@ impl MultisigOpParams {
                     .copy_from_slice(&update_bytes);
                 hash(&bytes)
             }
-            MultisigOpParams::WhitelistStatusUpdate {
+            MultisigOpParams::AccountSettingsUpdate {
                 wallet_address,
                 account_guid_hash,
-                status,
+                whitelist_status,
+                dapps_enabled,
             } => {
-                let mut bytes: Vec<u8> = Vec::new();
-                bytes.resize(1 + PUBKEY_BYTES + 32 + 1, 0);
-                bytes[0] = 8; // type code
-                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
-                bytes[33..65].copy_from_slice(account_guid_hash.to_bytes());
-                bytes[65] = status.to_u8();
+                let mut bytes: Vec<u8> = Vec::with_capacity(1 + PUBKEY_BYTES + 32 + 1);
+                bytes.push(8);
+                bytes.extend_from_slice(&wallet_address.to_bytes());
+                bytes.extend_from_slice(account_guid_hash.to_bytes());
+                pack_option(whitelist_status.as_ref(), &mut bytes);
+                pack_option(dapps_enabled.as_ref(), &mut bytes);
                 hash(&bytes)
             }
         }

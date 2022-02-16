@@ -1,10 +1,12 @@
 use crate::error::WalletError;
 use crate::instruction::{BalanceAccountUpdate, WalletConfigPolicyUpdate, WalletUpdate};
-use crate::model::address_book::{AddressBook, AddressBookEntry, AddressBookEntryNameHash};
+use crate::model::address_book::{
+    AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook,
+};
 use crate::model::balance_account::{
     AllowedDestinations, BalanceAccount, BalanceAccountGuidHash, BalanceAccountNameHash,
 };
-use crate::model::multisig_op::WhitelistStatus;
+use crate::model::multisig_op::BooleanSetting;
 use crate::model::signer::Signer;
 use crate::utils::{GetSlotIds, SlotFlags, SlotId, Slots};
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
@@ -32,6 +34,7 @@ pub struct Wallet {
     pub config_approvers: Approvers,
     pub balance_accounts: Vec<BalanceAccount>,
     pub config_policy_update_locked: bool,
+    pub dapp_book: DAppBook,
 }
 
 impl Sealed for Wallet {}
@@ -48,6 +51,7 @@ impl Wallet {
     pub const MAX_ADDRESS_BOOK_ENTRIES: usize = 128;
     pub const MIN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(60);
     pub const MAX_APPROVAL_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 24 * 365);
+    pub const MAX_DAPP_BOOK_ENTRIES: usize = 32;
 
     pub fn get_config_approvers_keys(&self) -> Vec<Pubkey> {
         self.get_approvers_keys(&self.config_approvers)
@@ -301,7 +305,8 @@ impl Wallet {
             approval_timeout_for_transfer: Duration::from_secs(0),
             transfer_approvers: Approvers::zero(),
             allowed_destinations: AllowedDestinations::zero(),
-            whitelist_status: WhitelistStatus::Off,
+            whitelist_status: BooleanSetting::Off,
+            dapps_enabled: BooleanSetting::Off,
         };
         self.balance_accounts.push(balance_account);
         self.update_balance_account(account_guid_hash, update)
@@ -319,7 +324,7 @@ impl Wallet {
     pub fn validate_whitelist_status_update(
         &self,
         account_guid_hash: &BalanceAccountGuidHash,
-        status: WhitelistStatus,
+        status: BooleanSetting,
     ) -> ProgramResult {
         let mut self_clone = self.clone();
         self_clone.update_whitelist_status(account_guid_hash, status)
@@ -328,10 +333,10 @@ impl Wallet {
     pub fn update_whitelist_status(
         &mut self,
         account_guid_hash: &BalanceAccountGuidHash,
-        status: WhitelistStatus,
+        status: BooleanSetting,
     ) -> ProgramResult {
         let balance_account_idx = self.get_balance_account_index(account_guid_hash)?;
-        if status == WhitelistStatus::Off {
+        if status == BooleanSetting::Off {
             if self.balance_accounts[balance_account_idx].has_whitelisted_destinations() {
                 msg!("Cannot turn whitelist status to off as there are whitelisted addresses");
                 return Err(ProgramError::InvalidArgument);
@@ -339,6 +344,17 @@ impl Wallet {
         }
 
         self.balance_accounts[balance_account_idx].whitelist_status = status;
+
+        Ok(())
+    }
+
+    pub fn update_dapps_enabled(
+        &mut self,
+        account_guid_hash: &BalanceAccountGuidHash,
+        enabled: BooleanSetting,
+    ) -> ProgramResult {
+        let balance_account_idx = self.get_balance_account_index(account_guid_hash)?;
+        self.balance_accounts[balance_account_idx].dapps_enabled = enabled;
 
         Ok(())
     }
@@ -463,6 +479,30 @@ impl Wallet {
         Ok(())
     }
 
+    fn add_dapp_book_entries(
+        &mut self,
+        entries_to_add: &Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    ) -> ProgramResult {
+        if !self.dapp_book.can_be_inserted(entries_to_add) {
+            msg!("Failed to add dapp book entries: at least one of the provided slots is already taken");
+            return Err(ProgramError::InvalidArgument);
+        }
+        self.dapp_book.insert_many(entries_to_add);
+        Ok(())
+    }
+
+    fn remove_dapp_book_entries(
+        &mut self,
+        entries_to_remove: &Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    ) -> ProgramResult {
+        if !self.dapp_book.can_be_removed(entries_to_remove) {
+            msg!("Failed to remove dapp book entries: at least one of the provided entries is not present in the config");
+            return Err(ProgramError::InvalidArgument);
+        }
+        self.dapp_book.remove_many(entries_to_remove);
+        Ok(())
+    }
+
     fn enable_config_approvers(
         &mut self,
         approvers: &Vec<(SlotId<Signer>, Signer)>,
@@ -567,7 +607,8 @@ impl Pack for Wallet {
         8 + // approval_timeout_for_config
         Approvers::STORAGE_SIZE + // config approvers
         1 + BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS + // balance accounts with size
-        1; // config_policy_update_locked
+        1 + // config_policy_update_locked
+        DAppBook::LEN;
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let dst = array_mut_ref![dst, 0, Wallet::LEN];
@@ -582,6 +623,7 @@ impl Pack for Wallet {
             balance_accounts_count_dst,
             balance_accounts_dst,
             config_policy_update_locked_dst,
+            dapp_book_dst,
         ) = mut_array_refs![
             dst,
             1,
@@ -593,7 +635,8 @@ impl Pack for Wallet {
             Approvers::STORAGE_SIZE,
             1,
             BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS,
-            1
+            1,
+            DAppBook::LEN
         ];
 
         is_initialized_dst[0] = self.is_initialized as u8;
@@ -601,6 +644,7 @@ impl Pack for Wallet {
         self.signers.pack_into_slice(signers_dst);
         self.assistant.pack_into_slice(assistant_account_dst);
         self.address_book.pack_into_slice(address_book_dst);
+        self.dapp_book.pack_into_slice(dapp_book_dst);
 
         approvals_required_for_config_dst[0] = self.approvals_required_for_config;
         *approval_timeout_for_config_dst = self.approval_timeout_for_config.as_secs().to_le_bytes();
@@ -631,6 +675,7 @@ impl Pack for Wallet {
             balance_accounts_count,
             balance_accounts_src,
             config_policy_update_locked_src,
+            dapp_book_src,
         ) = array_refs![
             src,
             1,
@@ -642,7 +687,8 @@ impl Pack for Wallet {
             Approvers::STORAGE_SIZE,
             1,
             BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS,
-            1
+            1,
+            DAppBook::LEN
         ];
 
         let mut balance_accounts = Vec::with_capacity(Wallet::MAX_BALANCE_ACCOUNTS);
@@ -673,6 +719,7 @@ impl Pack for Wallet {
                 [1] => true,
                 _ => return Err(ProgramError::InvalidAccountData),
             },
+            dapp_book: DAppBook::unpack_from_slice(dapp_book_src)?,
         })
     }
 }

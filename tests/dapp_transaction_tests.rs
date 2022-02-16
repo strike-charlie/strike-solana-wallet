@@ -22,7 +22,7 @@ use solana_sdk::signer::Signer as SdkSigner;
 use solana_sdk::transaction::{Transaction, TransactionError};
 use strike_wallet::error::WalletError;
 use strike_wallet::model::balance_account::BalanceAccountGuidHash;
-use strike_wallet::model::multisig_op::{ApprovalDisposition, MultisigOp};
+use strike_wallet::model::multisig_op::{ApprovalDisposition, BooleanSetting, MultisigOp};
 
 struct DAppTest {
     context: BalanceAccountTestContext,
@@ -39,6 +39,8 @@ async fn setup_dapp_test() -> DAppTest {
     let rent = context.banks_client.get_rent().await.unwrap();
     let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
     let multisig_op_account = Keypair::new();
+
+    account_settings_update(&mut context, None, Some(BooleanSetting::On), None).await;
 
     let inner_multisig_op_account = Keypair::new();
 
@@ -316,6 +318,8 @@ async fn test_dapp_transaction_with_spl_transfers() {
     let (mut context, balance_account) =
         utils::setup_balance_account_tests_and_finalize(Some(200000)).await;
 
+    account_settings_update(&mut context, None, Some(BooleanSetting::On), None).await;
+
     let rent = context.banks_client.get_rent().await.unwrap();
     let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
     let multisig_op_account = Keypair::new();
@@ -419,5 +423,50 @@ async fn test_dapp_transaction_with_spl_transfers() {
             .unwrap_err()
             .unwrap(),
         TransactionError::InstructionError(0, Custom(WalletError::SimulationFinished as u32)),
+    );
+}
+
+#[tokio::test]
+async fn test_dapp_transfer_without_dapps_enabled() {
+    let (mut context, _balance_account) =
+        utils::setup_balance_account_tests_and_finalize(None).await;
+
+    let rent = context.banks_client.get_rent().await.unwrap();
+    let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
+    let multisig_op_account = Keypair::new();
+
+    assert_eq!(
+        context
+            .banks_client
+            .process_transaction(Transaction::new_signed_with_payer(
+                &[
+                    system_instruction::create_account(
+                        &context.payer.pubkey(),
+                        &multisig_op_account.pubkey(),
+                        multisig_account_rent,
+                        MultisigOp::LEN as u64,
+                        &context.program_id,
+                    ),
+                    init_dapp_transaction(
+                        &context.program_id,
+                        &context.wallet_account.pubkey(),
+                        &multisig_op_account.pubkey(),
+                        &context.assistant_account.pubkey(),
+                        &context.balance_account_guid_hash,
+                        vec![],
+                    ),
+                ],
+                Some(&context.payer.pubkey()),
+                &[
+                    &context.payer,
+                    &multisig_op_account,
+                    &context.assistant_account,
+                ],
+                context.recent_blockhash,
+            ))
+            .await
+            .unwrap_err()
+            .unwrap(),
+        TransactionError::InstructionError(1, Custom(WalletError::DAppsDisabled as u32)),
     );
 }

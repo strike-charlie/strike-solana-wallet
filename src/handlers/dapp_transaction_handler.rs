@@ -33,6 +33,10 @@ pub fn init(
     let wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
     let balance_account = wallet.get_balance_account(account_guid_hash)?;
 
+    if balance_account.are_dapps_disabled() {
+        return Err(WalletError::DAppsDisabled.into());
+    }
+
     wallet.validate_transfer_initiator(balance_account, initiator_account_info)?;
 
     let mut multisig_op = MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;

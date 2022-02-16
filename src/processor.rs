@@ -21,7 +21,7 @@ use crate::handlers::utils::{
     finalize_multisig_op, get_clock_from_next_account, next_program_account_info,
     start_multisig_config_op, start_multisig_transfer_op, validate_balance_account_and_get_seed,
 };
-use crate::handlers::{wallet_config_policy_update_handler, whitelist_status_update_handler};
+use crate::handlers::{account_settings_update_handler, wallet_config_policy_update_handler};
 use crate::instruction::{BalanceAccountUpdate, ProgramInstruction, WalletUpdate};
 use crate::model::address_book::AddressBookEntryNameHash;
 use crate::model::balance_account::BalanceAccountGuidHash;
@@ -200,24 +200,28 @@ impl Processor {
                 instructions,
             ),
 
-            ProgramInstruction::InitWhitelistStatusUpdate {
+            ProgramInstruction::InitAccountSettingsUpdate {
                 account_guid_hash,
-                status,
-            } => whitelist_status_update_handler::init(
+                whitelist_status,
+                dapps_enabled,
+            } => account_settings_update_handler::init(
                 program_id,
                 &accounts,
                 &account_guid_hash,
-                status,
+                whitelist_status,
+                dapps_enabled,
             ),
 
-            ProgramInstruction::FinalizeWhitelistStatusUpdate {
+            ProgramInstruction::FinalizeAccountSettingsUpdate {
                 account_guid_hash,
-                status,
-            } => whitelist_status_update_handler::finalize(
+                whitelist_status,
+                dapps_enabled,
+            } => account_settings_update_handler::finalize(
                 program_id,
                 &accounts,
                 &account_guid_hash,
-                status,
+                whitelist_status,
+                dapps_enabled,
             ),
         }
     }

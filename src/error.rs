@@ -35,6 +35,8 @@ pub enum WalletError {
     SimulationFinished,
     #[error("Whitelisting Status is Off")]
     WhitelistingStatusOff,
+    #[error("DApp Transactions Are Disabled")]
+    DAppsDisabled,
 }
 
 impl From<WalletError> for ProgramError {
