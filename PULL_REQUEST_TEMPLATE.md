@@ -15,8 +15,9 @@
 ## Types of changes
 <!--- What types of changes does your code introduce? Put an `x` in all the boxes that apply: -->
 - [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
 - [ ] Bug fix breaking (fix that would cause existing functionality to change)
+- [ ] New feature (non-breaking change which adds functionality)
+- [ ] New feature breaking (change which adds functionality and causes existing functionality to change)
 
 ## Checklist:
 <!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
