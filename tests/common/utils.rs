@@ -1208,12 +1208,10 @@ pub async fn setup_create_balance_account_failure_tests(
         .collect_vec();
 
     // add a couple random signers to ensure init wallet has a non-zero signers
-    // vec in case the given transfer_approvers vec has insufficient len.
+    // vec in case the given transfer_approvers vec has insufficient length.
     for _ in 0..2 {
         signers.push((SlotId::new(signers.len()), approvers[0].pubkey_as_signer()));
     }
-    // take the first two signers as config approvers
-    let config_approvers = signers[..2].to_vec();
 
     // first initialize the wallet
     init_wallet(
@@ -1225,7 +1223,7 @@ pub async fn setup_create_balance_account_failure_tests(
         &assistant_account,
         Some(1),
         Some(signers),
-        Some(config_approvers),
+        Some(signers.clone()),
         Some(Duration::from_secs(3600)),
         Some(vec![]),
     )
