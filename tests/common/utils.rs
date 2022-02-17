@@ -19,7 +19,9 @@ use std::borrow::BorrowMut;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use strike_wallet::instruction::{BalanceAccountUpdate, WalletConfigPolicyUpdate, WalletUpdate};
+use strike_wallet::instruction::{
+    BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate, WalletUpdate,
+};
 use strike_wallet::model::address_book::{
     AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook,
 };
@@ -715,7 +717,7 @@ pub async fn account_settings_update(
 
     assert_eq!(
         multisig_op.params_hash,
-        MultisigOpParams::AccountSettingsUpdate {
+        MultisigOpParams::UpdateAccountSettings {
             wallet_address: context.wallet_account.pubkey(),
             account_guid_hash: context.balance_account_guid_hash,
             whitelist_enabled: whitelist_status,
@@ -801,6 +803,48 @@ pub async fn account_settings_update(
         starting_rent_collector_balance + op_account_balance - 5000,
         ending_rent_collector_balance
     );
+}
+
+pub async fn init_dapp_book_update(
+    test_context: &mut TestContext,
+    wallet_account: Pubkey,
+    assistant: &Keypair,
+    update: DAppBookUpdate,
+) -> Result<Pubkey, TransportError> {
+    let multisig_op_keypair = Keypair::new();
+    let multisig_op_pubkey = multisig_op_keypair.pubkey();
+
+    let instruction = instructions::init_dapp_book_update(
+        &test_context.program_id,
+        &wallet_account,
+        &multisig_op_pubkey,
+        &assistant.pubkey(),
+        update,
+    );
+
+    init_multisig_op(test_context, multisig_op_keypair, instruction, assistant)
+        .await
+        .map(|_| multisig_op_pubkey)
+}
+
+pub async fn finalize_dapp_book_update(
+    test_context: &mut TestContext,
+    wallet_account: Pubkey,
+    multisig_op_account: Pubkey,
+    update: DAppBookUpdate,
+) {
+    finalize_multisig_op(
+        test_context,
+        multisig_op_account,
+        instructions::finalize_dapp_book_update(
+            &test_context.program_id,
+            &wallet_account,
+            &multisig_op_account,
+            &test_context.payer.pubkey(),
+            update,
+        ),
+    )
+    .await;
 }
 
 pub async fn verify_whitelist_status(
@@ -993,6 +1037,7 @@ pub struct BalanceAccountTestContext {
     pub payer: Keypair,
     pub program_id: Pubkey,
     pub banks_client: BanksClient,
+    pub rent: Rent,
     pub wallet_account: Keypair,
     pub multisig_op_account: Keypair,
     pub assistant_account: Keypair,
@@ -1005,6 +1050,20 @@ pub struct BalanceAccountTestContext {
     pub allowed_destination: AddressBookEntry,
     pub destination: Keypair,
     pub params_hash: Hash,
+    pub allowed_dapp: AddressBookEntry,
+}
+
+impl BalanceAccountTestContext {
+    fn to_test_context(&self) -> TestContext {
+        let new_payer = Keypair::from_bytes(&self.payer.to_bytes()[..]).unwrap();
+        TestContext {
+            program_id: self.program_id,
+            banks_client: self.banks_client.clone(),
+            rent: self.rent,
+            payer: new_payer,
+            recent_blockhash: self.recent_blockhash,
+        }
+    }
 }
 
 pub async fn setup_balance_account_tests(
@@ -1029,6 +1088,10 @@ pub async fn setup_balance_account_tests(
     let addr_book_entry2 = AddressBookEntry {
         address: Keypair::new().pubkey(),
         name_hash: AddressBookEntryNameHash::new(&hash_of(b"Destination 2 Name")),
+    };
+    let allowed_dapp = AddressBookEntry {
+        address: Keypair::new().pubkey(),
+        name_hash: AddressBookEntryNameHash::new(&hash_of(b"DApp Name")),
     };
 
     // first initialize the wallet
@@ -1155,6 +1218,7 @@ pub async fn setup_balance_account_tests(
         payer,
         program_id,
         banks_client,
+        rent,
         wallet_account,
         multisig_op_account,
         assistant_account,
@@ -1167,6 +1231,7 @@ pub async fn setup_balance_account_tests(
         allowed_destination: addr_book_entry,
         destination,
         params_hash: multisig_op.params_hash,
+        allowed_dapp,
     }
 }
 
@@ -1319,6 +1384,37 @@ pub async fn setup_balance_account_tests_and_finalize(
         &[&context.balance_account_guid_hash.to_bytes()],
         &context.program_id,
     );
+
+    // add allowed dapp
+    let mut test_context = context.to_test_context();
+    let update = DAppBookUpdate {
+        add_dapps: vec![(SlotId::new(0), context.allowed_dapp)],
+        remove_dapps: vec![],
+    };
+
+    let multisig_op_account = init_dapp_book_update(
+        &mut test_context,
+        context.wallet_account.pubkey(),
+        &context.assistant_account,
+        update.clone(),
+    )
+    .await
+    .unwrap();
+
+    approve_n_of_n_multisig_op(
+        &mut test_context,
+        &multisig_op_account,
+        vec![&context.approvers[0], &context.approvers[1]],
+    )
+    .await;
+
+    finalize_dapp_book_update(
+        &mut test_context,
+        context.wallet_account.pubkey(),
+        multisig_op_account,
+        update.clone(),
+    )
+    .await;
 
     (context, source_account)
 }

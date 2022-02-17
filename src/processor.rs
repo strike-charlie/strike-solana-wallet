@@ -16,12 +16,12 @@ use spl_token::instruction as spl_instruction;
 use spl_token::state::{Account as SPLAccount, Account};
 
 use crate::error::WalletError;
-use crate::handlers::dapp_transaction_handler;
 use crate::handlers::utils::{
     finalize_multisig_op, get_clock_from_next_account, next_program_account_info,
     start_multisig_config_op, start_multisig_transfer_op, validate_balance_account_and_get_seed,
 };
 use crate::handlers::{account_settings_update_handler, wallet_config_policy_update_handler};
+use crate::handlers::{dapp_book_update_handler, dapp_transaction_handler};
 use crate::instruction::{BalanceAccountUpdate, ProgramInstruction, WalletUpdate};
 use crate::model::address_book::AddressBookEntryNameHash;
 use crate::model::balance_account::BalanceAccountGuidHash;
@@ -182,21 +182,25 @@ impl Processor {
 
             ProgramInstruction::InitDAppTransaction {
                 ref account_guid_hash,
+                dapp,
                 instructions,
             } => dapp_transaction_handler::init(
                 program_id,
                 accounts,
                 account_guid_hash,
+                dapp,
                 instructions,
             ),
 
             ProgramInstruction::FinalizeDAppTransaction {
                 ref account_guid_hash,
+                dapp,
                 ref instructions,
             } => dapp_transaction_handler::finalize(
                 program_id,
                 accounts,
                 account_guid_hash,
+                dapp,
                 instructions,
             ),
 
@@ -223,6 +227,14 @@ impl Processor {
                 whitelist_enabled,
                 dapps_enabled,
             ),
+
+            ProgramInstruction::InitDAppBookUpdate { update } => {
+                dapp_book_update_handler::init(program_id, &accounts, &update)
+            }
+
+            ProgramInstruction::FinalizeDAppBookUpdate { update } => {
+                dapp_book_update_handler::finalize(program_id, &accounts, &update)
+            }
         }
     }
 

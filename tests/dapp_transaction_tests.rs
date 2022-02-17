@@ -1,15 +1,7 @@
 #![cfg(feature = "test-bpf")]
-mod common;
-pub use common::instructions::*;
-pub use common::utils::*;
 
 use std::borrow::BorrowMut;
 
-use crate::common::utils;
-use crate::utils::BalanceAccountTestContext;
-use common::instructions::{
-    finalize_dapp_transaction, init_dapp_transaction, init_transfer, set_approval_disposition,
-};
 use solana_program::instruction::Instruction;
 use solana_program::instruction::InstructionError::Custom;
 use solana_program::program_pack::Pack;
@@ -20,14 +12,27 @@ use solana_sdk::account::ReadableAccount;
 use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer as SdkSigner;
 use solana_sdk::transaction::{Transaction, TransactionError};
+
+pub use common::instructions::*;
+use common::instructions::{
+    finalize_dapp_transaction, init_dapp_transaction, init_transfer, set_approval_disposition,
+};
+pub use common::utils::*;
 use strike_wallet::error::WalletError;
+use strike_wallet::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
 use strike_wallet::model::balance_account::BalanceAccountGuidHash;
 use strike_wallet::model::multisig_op::{ApprovalDisposition, BooleanSetting, MultisigOp};
+
+use crate::common::utils;
+use crate::utils::BalanceAccountTestContext;
+
+mod common;
 
 struct DAppTest {
     context: BalanceAccountTestContext,
     balance_account: Pubkey,
     multisig_op_account: Keypair,
+    dapp: AddressBookEntry,
     inner_instructions: Vec<Instruction>,
     inner_multisig_op_account: Keypair,
 }
@@ -40,9 +45,19 @@ async fn setup_dapp_test() -> DAppTest {
     let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
     let multisig_op_account = Keypair::new();
 
-    account_settings_update(&mut context, None, Some(BooleanSetting::On), None).await;
+    account_settings_update(
+        &mut context,
+        Some(BooleanSetting::Off),
+        Some(BooleanSetting::On),
+        None,
+    )
+    .await;
 
     let inner_multisig_op_account = Keypair::new();
+    let dapp = AddressBookEntry {
+        address: context.program_id.clone(),
+        name_hash: AddressBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
+    };
 
     let inner_instructions = vec![
         system_instruction::create_account(
@@ -84,6 +99,7 @@ async fn setup_dapp_test() -> DAppTest {
                     &multisig_op_account.pubkey(),
                     &context.assistant_account.pubkey(),
                     &context.balance_account_guid_hash,
+                    dapp,
                     inner_instructions.clone(),
                 ),
             ],
@@ -102,6 +118,7 @@ async fn setup_dapp_test() -> DAppTest {
         context,
         balance_account,
         multisig_op_account,
+        dapp,
         inner_instructions,
         inner_multisig_op_account,
     }
@@ -125,6 +142,7 @@ async fn test_dapp_transaction_simulation() {
                     &dapp_test.balance_account,
                     &context.payer.pubkey(),
                     &context.balance_account_guid_hash,
+                    dapp_test.dapp,
                     &dapp_test.inner_instructions,
                 )],
                 Some(&context.payer.pubkey()),
@@ -160,6 +178,7 @@ async fn test_dapp_transaction_bad_signature() {
                     &dapp_test.balance_account,
                     &context.payer.pubkey(),
                     &BalanceAccountGuidHash::zero(),
+                    dapp_test.dapp,
                     &dapp_test.inner_instructions,
                 )],
                 Some(&context.payer.pubkey()),
@@ -217,6 +236,7 @@ async fn test_dapp_transaction() {
                 &dapp_test.balance_account,
                 &context.payer.pubkey(),
                 &context.balance_account_guid_hash,
+                dapp_test.dapp,
                 &dapp_test.inner_instructions,
             )],
             Some(&context.payer.pubkey()),
@@ -283,6 +303,7 @@ async fn test_dapp_transaction_denied() {
                 &dapp_test.balance_account,
                 &context.payer.pubkey(),
                 &context.balance_account_guid_hash,
+                dapp_test.dapp,
                 &dapp_test.inner_instructions,
             )],
             Some(&context.payer.pubkey()),
@@ -370,6 +391,11 @@ async fn test_dapp_transaction_with_spl_transfers() {
         .unwrap(),
     ];
 
+    let dapp = AddressBookEntry {
+        address: context.program_id.clone(),
+        name_hash: AddressBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
+    };
+
     context
         .banks_client
         .process_transaction(Transaction::new_signed_with_payer(
@@ -387,6 +413,7 @@ async fn test_dapp_transaction_with_spl_transfers() {
                     &multisig_op_account.pubkey(),
                     &context.assistant_account.pubkey(),
                     &context.balance_account_guid_hash,
+                    dapp,
                     inner_instructions.clone(),
                 ),
             ],
@@ -413,6 +440,7 @@ async fn test_dapp_transaction_with_spl_transfers() {
                     &balance_account,
                     &context.payer.pubkey(),
                     &context.balance_account_guid_hash,
+                    dapp,
                     &inner_instructions,
                 )],
                 Some(&context.payer.pubkey()),
@@ -427,14 +455,17 @@ async fn test_dapp_transaction_with_spl_transfers() {
 }
 
 #[tokio::test]
-async fn test_dapp_transfer_without_dapps_enabled() {
+async fn test_dapp_transaction_without_dapps_enabled() {
     let (mut context, _balance_account) =
         utils::setup_balance_account_tests_and_finalize(None).await;
 
     let rent = context.banks_client.get_rent().await.unwrap();
     let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
     let multisig_op_account = Keypair::new();
-
+    let dapp = AddressBookEntry {
+        address: context.program_id.clone(),
+        name_hash: AddressBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
+    };
     assert_eq!(
         context
             .banks_client
@@ -453,6 +484,7 @@ async fn test_dapp_transfer_without_dapps_enabled() {
                         &multisig_op_account.pubkey(),
                         &context.assistant_account.pubkey(),
                         &context.balance_account_guid_hash,
+                        dapp,
                         vec![],
                     ),
                 ],
@@ -469,4 +501,109 @@ async fn test_dapp_transfer_without_dapps_enabled() {
             .unwrap(),
         TransactionError::InstructionError(1, Custom(WalletError::DAppsDisabled as u32)),
     );
+}
+
+#[tokio::test]
+async fn test_dapp_transaction_unwhitelisted() {
+    let (mut context, _balance_account) =
+        utils::setup_balance_account_tests_and_finalize(None).await;
+
+    account_settings_update(
+        &mut context,
+        Some(BooleanSetting::On),
+        Some(BooleanSetting::On),
+        None,
+    )
+    .await;
+
+    let rent = context.banks_client.get_rent().await.unwrap();
+    let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
+    let multisig_op_account = Keypair::new();
+    let dapp = AddressBookEntry {
+        address: context.program_id.clone(),
+        name_hash: AddressBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
+    };
+    assert_eq!(
+        context
+            .banks_client
+            .process_transaction(Transaction::new_signed_with_payer(
+                &[
+                    system_instruction::create_account(
+                        &context.payer.pubkey(),
+                        &multisig_op_account.pubkey(),
+                        multisig_account_rent,
+                        MultisigOp::LEN as u64,
+                        &context.program_id,
+                    ),
+                    init_dapp_transaction(
+                        &context.program_id,
+                        &context.wallet_account.pubkey(),
+                        &multisig_op_account.pubkey(),
+                        &context.assistant_account.pubkey(),
+                        &context.balance_account_guid_hash,
+                        dapp,
+                        vec![],
+                    ),
+                ],
+                Some(&context.payer.pubkey()),
+                &[
+                    &context.payer,
+                    &multisig_op_account,
+                    &context.assistant_account,
+                ],
+                context.recent_blockhash,
+            ))
+            .await
+            .unwrap_err()
+            .unwrap(),
+        TransactionError::InstructionError(1, Custom(WalletError::DAppNotAllowed as u32)),
+    );
+}
+
+#[tokio::test]
+async fn test_dapp_transaction_whitelisted() {
+    let (mut context, _balance_account) =
+        utils::setup_balance_account_tests_and_finalize(None).await;
+
+    account_settings_update(
+        &mut context,
+        Some(BooleanSetting::On),
+        Some(BooleanSetting::On),
+        None,
+    )
+    .await;
+
+    let multisig_account_rent = context.rent.minimum_balance(MultisigOp::LEN);
+    let multisig_op_account = Keypair::new();
+    context
+        .banks_client
+        .process_transaction(Transaction::new_signed_with_payer(
+            &[
+                system_instruction::create_account(
+                    &context.payer.pubkey(),
+                    &multisig_op_account.pubkey(),
+                    multisig_account_rent,
+                    MultisigOp::LEN as u64,
+                    &context.program_id,
+                ),
+                init_dapp_transaction(
+                    &context.program_id,
+                    &context.wallet_account.pubkey(),
+                    &multisig_op_account.pubkey(),
+                    &context.assistant_account.pubkey(),
+                    &context.balance_account_guid_hash,
+                    context.allowed_dapp,
+                    vec![],
+                ),
+            ],
+            Some(&context.payer.pubkey()),
+            &[
+                &context.payer,
+                &multisig_op_account,
+                &context.assistant_account,
+            ],
+            context.recent_blockhash,
+        ))
+        .await
+        .unwrap();
 }

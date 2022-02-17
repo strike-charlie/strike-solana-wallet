@@ -1,7 +1,9 @@
 use crate::error::WalletError;
 use crate::instruction::{
-    append_instruction, BalanceAccountUpdate, WalletConfigPolicyUpdate, WalletUpdate,
+    append_instruction, BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate,
+    WalletUpdate,
 };
+use crate::model::address_book::AddressBookEntry;
 use crate::model::balance_account::BalanceAccountGuidHash;
 use crate::model::signer::Signer;
 use crate::model::wallet::Wallet;
@@ -476,13 +478,18 @@ pub enum MultisigOpParams {
     DAppTransaction {
         wallet_address: Pubkey,
         account_guid_hash: BalanceAccountGuidHash,
+        dapp: AddressBookEntry,
         instructions: Vec<Instruction>,
     },
-    AccountSettingsUpdate {
+    UpdateAccountSettings {
         wallet_address: Pubkey,
         account_guid_hash: BalanceAccountGuidHash,
         whitelist_enabled: Option<BooleanSetting>,
         dapps_enabled: Option<BooleanSetting>,
+    },
+    UpdateDAppBook {
+        wallet_address: Pubkey,
+        update: DAppBookUpdate,
     },
 }
 
@@ -611,6 +618,7 @@ impl MultisigOpParams {
             MultisigOpParams::DAppTransaction {
                 wallet_address,
                 account_guid_hash,
+                dapp,
                 instructions,
             } => {
                 let mut bytes: Vec<u8> = Vec::new();
@@ -618,6 +626,9 @@ impl MultisigOpParams {
                 bytes.extend_from_slice(&wallet_address.to_bytes());
                 bytes.extend_from_slice(&account_guid_hash.to_bytes());
                 bytes.put_u16_le(instructions.len().as_u16());
+                let mut buf = vec![0; AddressBookEntry::LEN];
+                dapp.pack_into_slice(buf.as_mut_slice());
+                bytes.extend_from_slice(&buf[..]);
                 for instruction in instructions.into_iter() {
                     append_instruction(instruction, &mut bytes);
                 }
@@ -639,7 +650,7 @@ impl MultisigOpParams {
                     .copy_from_slice(&update_bytes);
                 hash(&bytes)
             }
-            MultisigOpParams::AccountSettingsUpdate {
+            MultisigOpParams::UpdateAccountSettings {
                 wallet_address,
                 account_guid_hash,
                 whitelist_enabled,
@@ -651,6 +662,21 @@ impl MultisigOpParams {
                 bytes.extend_from_slice(account_guid_hash.to_bytes());
                 pack_option(whitelist_enabled.as_ref(), &mut bytes);
                 pack_option(dapps_enabled.as_ref(), &mut bytes);
+                hash(&bytes)
+            }
+            MultisigOpParams::UpdateDAppBook {
+                wallet_address,
+                update,
+            } => {
+                let mut update_bytes: Vec<u8> = Vec::new();
+                update.pack(&mut update_bytes);
+
+                let mut bytes: Vec<u8> = Vec::new();
+                bytes.resize(1 + PUBKEY_BYTES + update_bytes.len(), 0);
+                bytes[0] = 9; // type code
+                bytes[1..1 + PUBKEY_BYTES].copy_from_slice(&wallet_address.to_bytes());
+                bytes[1 + PUBKEY_BYTES..1 + PUBKEY_BYTES + update_bytes.len()]
+                    .copy_from_slice(&update_bytes);
                 hash(&bytes)
             }
         }

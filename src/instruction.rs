@@ -184,6 +184,7 @@ pub enum ProgramInstruction {
     InitDAppTransaction {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,
+        dapp: AddressBookEntry,
     },
 
     /// 0. `[writable]` The multisig operation account
@@ -194,6 +195,7 @@ pub enum ProgramInstruction {
     FinalizeDAppTransaction {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,
+        dapp: AddressBookEntry,
     },
 
     /// 0  `[writable]` The multisig operation account
@@ -214,6 +216,18 @@ pub enum ProgramInstruction {
         whitelist_enabled: Option<BooleanSetting>,
         dapps_enabled: Option<BooleanSetting>,
     },
+
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[]` The wallet account
+    /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 3. `[]` The sysvar clock account
+    InitDAppBookUpdate { update: DAppBookUpdate },
+
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[writable]` The wallet account
+    /// 2. `[signer]` The rent collector account
+    /// 3. `[]` The sysvar clock account
+    FinalizeDAppBookUpdate { update: DAppBookUpdate },
 }
 
 impl ProgramInstruction {
@@ -361,10 +375,14 @@ impl ProgramInstruction {
             }
             &ProgramInstruction::InitDAppTransaction {
                 ref account_guid_hash,
+                ref dapp,
                 ref instructions,
             } => {
                 buf.push(16);
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
+                let mut buf2 = vec![0; AddressBookEntry::LEN];
+                dapp.pack_into_slice(buf2.as_mut_slice());
+                buf.extend_from_slice(&buf2[..]);
                 buf.put_u16_le(instructions.len() as u16);
                 for instruction in instructions.iter() {
                     append_instruction(instruction, &mut buf);
@@ -372,10 +390,14 @@ impl ProgramInstruction {
             }
             &ProgramInstruction::FinalizeDAppTransaction {
                 ref account_guid_hash,
+                ref dapp,
                 ref instructions,
             } => {
                 buf.push(17);
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
+                let mut buf2 = vec![0; AddressBookEntry::LEN];
+                dapp.pack_into_slice(buf2.as_mut_slice());
+                buf.extend_from_slice(&buf2[..]);
                 buf.put_u16_le(instructions.len() as u16);
                 for instruction in instructions.iter() {
                     append_instruction(instruction, &mut buf);
@@ -400,6 +422,18 @@ impl ProgramInstruction {
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
                 pack_option(whitelist_enabled.as_ref(), &mut buf);
                 pack_option(dapps_enabled.as_ref(), &mut buf);
+            }
+            &ProgramInstruction::InitDAppBookUpdate { ref update } => {
+                buf.push(20);
+                let mut update_bytes: Vec<u8> = Vec::new();
+                update.pack(&mut update_bytes);
+                buf.extend_from_slice(&update_bytes);
+            }
+            &ProgramInstruction::FinalizeDAppBookUpdate { ref update } => {
+                buf.push(21);
+                let mut update_bytes: Vec<u8> = Vec::new();
+                update.pack(&mut update_bytes);
+                buf.extend_from_slice(&update_bytes);
             }
         }
         buf
@@ -430,6 +464,8 @@ impl ProgramInstruction {
             17 => Self::unpack_finalize_dapp_transaction_instruction(rest)?,
             18 => Self::unpack_init_account_settings_update_instruction(rest)?,
             19 => Self::unpack_finalize_account_settings_update_instruction(rest)?,
+            20 => Self::unpack_init_dapp_book_update_instruction(rest)?,
+            21 => Self::unpack_finalize_dapp_book_update_instruction(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -662,8 +698,13 @@ impl ProgramInstruction {
         let account_guid_hash = unpack_account_guid_hash(
             utils::read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
         )?;
+        let dapp = AddressBookEntry::unpack_from_slice(
+            utils::read_slice(iter, AddressBookEntry::LEN)
+                .ok_or(ProgramError::InvalidInstructionData)?,
+        )?;
         Ok(Self::InitDAppTransaction {
             account_guid_hash,
+            dapp,
             instructions: read_instructions(iter)?,
         })
     }
@@ -675,8 +716,13 @@ impl ProgramInstruction {
         let account_guid_hash = unpack_account_guid_hash(
             utils::read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
         )?;
+        let dapp = AddressBookEntry::unpack_from_slice(
+            utils::read_slice(iter, AddressBookEntry::LEN)
+                .ok_or(ProgramError::InvalidInstructionData)?,
+        )?;
         Ok(Self::FinalizeDAppTransaction {
             account_guid_hash,
+            dapp,
             instructions: read_instructions(iter)?,
         })
     }
@@ -704,6 +750,22 @@ impl ProgramInstruction {
             )?,
             whitelist_enabled: utils::unpack_option::<BooleanSetting>(iter)?,
             dapps_enabled: utils::unpack_option::<BooleanSetting>(iter)?,
+        })
+    }
+
+    fn unpack_init_dapp_book_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::InitDAppBookUpdate {
+            update: DAppBookUpdate::unpack(bytes)?,
+        })
+    }
+
+    fn unpack_finalize_dapp_book_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::FinalizeDAppBookUpdate {
+            update: DAppBookUpdate::unpack(bytes)?,
         })
     }
 }
@@ -842,6 +904,33 @@ impl BalanceAccountUpdate {
         append_signers(&self.remove_transfer_approvers, dst);
         append_address_book_entries(&self.add_allowed_destinations, dst);
         append_address_book_entries(&self.remove_allowed_destinations, dst);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct DAppBookUpdate {
+    pub add_dapps: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    pub remove_dapps: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+}
+
+impl DAppBookUpdate {
+    fn unpack(bytes: &[u8]) -> Result<DAppBookUpdate, ProgramError> {
+        if bytes.len() < 1 {
+            return Err(ProgramError::InvalidInstructionData);
+        }
+        let mut iter = bytes.iter();
+        let add_dapps = read_address_book_entries(&mut iter)?;
+        let remove_dapps = read_address_book_entries(&mut iter)?;
+
+        Ok(DAppBookUpdate {
+            add_dapps,
+            remove_dapps,
+        })
+    }
+
+    pub fn pack(&self, dst: &mut Vec<u8>) {
+        append_address_book_entries(&self.add_dapps, dst);
+        append_address_book_entries(&self.remove_dapps, dst);
     }
 }
 

@@ -87,6 +87,8 @@ pub enum WalletError {
     /// Unknown Signer
     #[error("Unknown Signer")]
     UnknownSigner,
+    #[error("DApp Not Allowed")]
+    DAppNotAllowed,
 }
 
 impl From<WalletError> for ProgramError {

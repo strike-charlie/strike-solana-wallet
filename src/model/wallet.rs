@@ -1,5 +1,7 @@
 use crate::error::WalletError;
-use crate::instruction::{BalanceAccountUpdate, WalletConfigPolicyUpdate, WalletUpdate};
+use crate::instruction::{
+    BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate, WalletUpdate,
+};
 use crate::model::address_book::{
     AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook,
 };
@@ -276,6 +278,18 @@ impl Wallet {
             );
             return Err(WalletError::InvalidApproverCount.into());
         }
+
+        Ok(())
+    }
+
+    pub fn validate_dapp_book_update(&self, update: &DAppBookUpdate) -> ProgramResult {
+        let mut self_clone = self.clone();
+        self_clone.update_dapp_book(update)
+    }
+
+    pub fn update_dapp_book(&mut self, update: &DAppBookUpdate) -> ProgramResult {
+        self.add_dapp_book_entries(&update.add_dapps)?;
+        self.remove_dapp_book_entries(&update.remove_dapps)?;
 
         Ok(())
     }

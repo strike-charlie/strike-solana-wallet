@@ -6,7 +6,8 @@ use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::time::Duration;
 use strike_wallet::instruction::{
-    BalanceAccountUpdate, ProgramInstruction, WalletConfigPolicyUpdate, WalletUpdate,
+    BalanceAccountUpdate, DAppBookUpdate, ProgramInstruction, WalletConfigPolicyUpdate,
+    WalletUpdate,
 };
 use strike_wallet::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
@@ -202,6 +203,46 @@ pub fn finalize_balance_account_creation(
     }
     .borrow()
     .pack();
+    let accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*wallet_account, false),
+        AccountMeta::new_readonly(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+    ];
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn init_dapp_book_update(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    assistant_account: &Pubkey,
+    update: DAppBookUpdate,
+) -> Instruction {
+    init_multisig_op(
+        program_id,
+        wallet_account,
+        multisig_op_account,
+        assistant_account,
+        ProgramInstruction::InitDAppBookUpdate { update },
+    )
+}
+
+pub fn finalize_dapp_book_update(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    update: DAppBookUpdate,
+) -> Instruction {
+    let data = ProgramInstruction::FinalizeDAppBookUpdate { update }
+        .borrow()
+        .pack();
     let accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new(*wallet_account, false),
@@ -571,10 +612,12 @@ pub fn init_dapp_transaction(
     multisig_op_account: &Pubkey,
     assistant_account: &Pubkey,
     account_guid_hash: &BalanceAccountGuidHash,
+    dapp: AddressBookEntry,
     instructions: Vec<Instruction>,
 ) -> Instruction {
     let data = ProgramInstruction::InitDAppTransaction {
         account_guid_hash: *account_guid_hash,
+        dapp,
         instructions,
     }
     .borrow()
@@ -601,10 +644,12 @@ pub fn finalize_dapp_transaction(
     balance_account: &Pubkey,
     rent_collector_account: &Pubkey,
     account_guid_hash: &BalanceAccountGuidHash,
+    dapp: AddressBookEntry,
     instructions: &Vec<Instruction>,
 ) -> Instruction {
     let data = ProgramInstruction::FinalizeDAppTransaction {
         account_guid_hash: *account_guid_hash,
+        dapp,
         instructions: instructions.clone(),
     }
     .borrow()
