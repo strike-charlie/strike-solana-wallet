@@ -30,7 +30,7 @@ async fn test_whitelist_status() {
         &mut context,
         vec![(SlotId::new(0), destination_to_add)],
         vec![],
-        Some(Custom(WalletError::WhitelistingStatusOff as u32)),
+        Some(Custom(WalletError::WhitelistDisabled as u32)),
     )
     .await;
 

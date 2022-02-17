@@ -54,7 +54,7 @@ pub struct BalanceAccount {
     pub approval_timeout_for_transfer: Duration,
     pub transfer_approvers: Approvers,
     pub allowed_destinations: AllowedDestinations,
-    pub whitelist_status: BooleanSetting,
+    pub whitelist_enabled: BooleanSetting,
     pub dapps_enabled: BooleanSetting,
 }
 
@@ -99,7 +99,7 @@ impl Pack for BalanceAccount {
 
         approvers_dst.copy_from_slice(self.transfer_approvers.as_bytes());
         allowed_destinations_dst.copy_from_slice(self.allowed_destinations.as_bytes());
-        boolean_settings_dst[0] |= self.whitelist_status.to_u8() << WHITELIST_SETTING_BIT;
+        boolean_settings_dst[0] |= self.whitelist_enabled.to_u8() << WHITELIST_SETTING_BIT;
         boolean_settings_dst[0] |= self.dapps_enabled.to_u8() << DAPPS_SETTING_BIT;
     }
 
@@ -133,7 +133,7 @@ impl Pack for BalanceAccount {
             )),
             transfer_approvers: Approvers::new(*approvers_src),
             allowed_destinations: AllowedDestinations::new(*allowed_destinations_src),
-            whitelist_status: BooleanSetting::from_u8(
+            whitelist_enabled: BooleanSetting::from_u8(
                 boolean_settings_src[0] & (1 << WHITELIST_SETTING_BIT),
             ),
             dapps_enabled: BooleanSetting::from_u8(
@@ -145,7 +145,7 @@ impl Pack for BalanceAccount {
 
 impl BalanceAccount {
     pub fn is_whitelist_disabled(&self) -> bool {
-        return self.whitelist_status == BooleanSetting::Off;
+        return self.whitelist_enabled == BooleanSetting::Off;
     }
 
     pub fn are_dapps_disabled(&self) -> bool {

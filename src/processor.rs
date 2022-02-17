@@ -202,25 +202,25 @@ impl Processor {
 
             ProgramInstruction::InitAccountSettingsUpdate {
                 account_guid_hash,
-                whitelist_status,
+                whitelist_enabled,
                 dapps_enabled,
             } => account_settings_update_handler::init(
                 program_id,
                 &accounts,
                 &account_guid_hash,
-                whitelist_status,
+                whitelist_enabled,
                 dapps_enabled,
             ),
 
             ProgramInstruction::FinalizeAccountSettingsUpdate {
                 account_guid_hash,
-                whitelist_status,
+                whitelist_enabled,
                 dapps_enabled,
             } => account_settings_update_handler::finalize(
                 program_id,
                 &accounts,
                 &account_guid_hash,
-                whitelist_status,
+                whitelist_enabled,
                 dapps_enabled,
             ),
         }

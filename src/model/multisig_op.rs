@@ -481,7 +481,7 @@ pub enum MultisigOpParams {
     AccountSettingsUpdate {
         wallet_address: Pubkey,
         account_guid_hash: BalanceAccountGuidHash,
-        whitelist_status: Option<BooleanSetting>,
+        whitelist_enabled: Option<BooleanSetting>,
         dapps_enabled: Option<BooleanSetting>,
     },
 }
@@ -642,14 +642,14 @@ impl MultisigOpParams {
             MultisigOpParams::AccountSettingsUpdate {
                 wallet_address,
                 account_guid_hash,
-                whitelist_status,
+                whitelist_enabled,
                 dapps_enabled,
             } => {
                 let mut bytes: Vec<u8> = Vec::with_capacity(1 + PUBKEY_BYTES + 32 + 2 + 2);
                 bytes.push(8);
                 bytes.extend_from_slice(&wallet_address.to_bytes());
                 bytes.extend_from_slice(account_guid_hash.to_bytes());
-                pack_option(whitelist_status.as_ref(), &mut bytes);
+                pack_option(whitelist_enabled.as_ref(), &mut bytes);
                 pack_option(dapps_enabled.as_ref(), &mut bytes);
                 hash(&bytes)
             }

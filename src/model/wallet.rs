@@ -305,7 +305,7 @@ impl Wallet {
             approval_timeout_for_transfer: Duration::from_secs(0),
             transfer_approvers: Approvers::zero(),
             allowed_destinations: AllowedDestinations::zero(),
-            whitelist_status: BooleanSetting::Off,
+            whitelist_enabled: BooleanSetting::Off,
             dapps_enabled: BooleanSetting::Off,
         };
         self.balance_accounts.push(balance_account);
@@ -321,16 +321,16 @@ impl Wallet {
         self_clone.update_balance_account(account_guid_hash, update)
     }
 
-    pub fn validate_whitelist_status_update(
+    pub fn validate_whitelist_enabled_update(
         &self,
         account_guid_hash: &BalanceAccountGuidHash,
         status: BooleanSetting,
     ) -> ProgramResult {
         let mut self_clone = self.clone();
-        self_clone.update_whitelist_status(account_guid_hash, status)
+        self_clone.update_whitelist_enabled(account_guid_hash, status)
     }
 
-    pub fn update_whitelist_status(
+    pub fn update_whitelist_enabled(
         &mut self,
         account_guid_hash: &BalanceAccountGuidHash,
         status: BooleanSetting,
@@ -343,7 +343,7 @@ impl Wallet {
             }
         }
 
-        self.balance_accounts[balance_account_idx].whitelist_status = status;
+        self.balance_accounts[balance_account_idx].whitelist_enabled = status;
 
         Ok(())
     }
@@ -389,7 +389,7 @@ impl Wallet {
 
         if !update.add_allowed_destinations.is_empty() && balance_account.is_whitelist_disabled() {
             msg!("Cannot add destinations when whitelisting status is Off");
-            return Err(WalletError::WhitelistingStatusOff.into());
+            return Err(WalletError::WhitelistDisabled.into());
         }
 
         let approvers_count_after_update = balance_account.transfer_approvers.count_enabled();

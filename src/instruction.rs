@@ -202,7 +202,7 @@ pub enum ProgramInstruction {
     /// 3. `[]` The sysvar clock account
     InitAccountSettingsUpdate {
         account_guid_hash: BalanceAccountGuidHash,
-        whitelist_status: Option<BooleanSetting>,
+        whitelist_enabled: Option<BooleanSetting>,
         dapps_enabled: Option<BooleanSetting>,
     },
 
@@ -211,7 +211,7 @@ pub enum ProgramInstruction {
     /// 2. `[signer]` The rent collector account
     FinalizeAccountSettingsUpdate {
         account_guid_hash: BalanceAccountGuidHash,
-        whitelist_status: Option<BooleanSetting>,
+        whitelist_enabled: Option<BooleanSetting>,
         dapps_enabled: Option<BooleanSetting>,
     },
 }
@@ -383,22 +383,22 @@ impl ProgramInstruction {
             }
             &ProgramInstruction::InitAccountSettingsUpdate {
                 ref account_guid_hash,
-                ref whitelist_status,
+                ref whitelist_enabled,
                 ref dapps_enabled,
             } => {
                 buf.push(18);
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
-                pack_option(whitelist_status.as_ref(), &mut buf);
+                pack_option(whitelist_enabled.as_ref(), &mut buf);
                 pack_option(dapps_enabled.as_ref(), &mut buf);
             }
             &ProgramInstruction::FinalizeAccountSettingsUpdate {
                 ref account_guid_hash,
-                ref whitelist_status,
+                ref whitelist_enabled,
                 ref dapps_enabled,
             } => {
                 buf.push(19);
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
-                pack_option(whitelist_status.as_ref(), &mut buf);
+                pack_option(whitelist_enabled.as_ref(), &mut buf);
                 pack_option(dapps_enabled.as_ref(), &mut buf);
             }
         }
@@ -689,7 +689,7 @@ impl ProgramInstruction {
             account_guid_hash: unpack_account_guid_hash(
                 utils::read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
             )?,
-            whitelist_status: utils::unpack_option::<BooleanSetting>(iter)?,
+            whitelist_enabled: utils::unpack_option::<BooleanSetting>(iter)?,
             dapps_enabled: utils::unpack_option::<BooleanSetting>(iter)?,
         })
     }
@@ -702,7 +702,7 @@ impl ProgramInstruction {
             account_guid_hash: unpack_account_guid_hash(
                 utils::read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
             )?,
-            whitelist_status: utils::unpack_option::<BooleanSetting>(iter)?,
+            whitelist_enabled: utils::unpack_option::<BooleanSetting>(iter)?,
             dapps_enabled: utils::unpack_option::<BooleanSetting>(iter)?,
         })
     }

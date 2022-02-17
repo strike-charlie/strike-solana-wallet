@@ -679,7 +679,7 @@ pub fn init_account_settings_update(
         assistant_account,
         ProgramInstruction::InitAccountSettingsUpdate {
             account_guid_hash,
-            whitelist_status,
+            whitelist_enabled: whitelist_status,
             dapps_enabled,
         },
     )
@@ -696,7 +696,7 @@ pub fn finalize_account_settings_update(
 ) -> Instruction {
     let data = ProgramInstruction::FinalizeAccountSettingsUpdate {
         account_guid_hash,
-        whitelist_status,
+        whitelist_enabled: whitelist_status,
         dapps_enabled,
     }
     .borrow()

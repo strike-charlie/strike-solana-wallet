@@ -14,7 +14,7 @@ pub fn init(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     account_guid_hash: &BalanceAccountGuidHash,
-    whitelist_status: Option<BooleanSetting>,
+    whitelist_enabled: Option<BooleanSetting>,
     dapps_enabled: Option<BooleanSetting>,
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
@@ -25,8 +25,8 @@ pub fn init(
 
     let wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
     wallet.validate_config_initiator(initiator_account_info)?;
-    if let Some(status) = whitelist_status {
-        wallet.validate_whitelist_status_update(account_guid_hash, status)?;
+    if let Some(status) = whitelist_enabled {
+        wallet.validate_whitelist_enabled_update(account_guid_hash, status)?;
     }
 
     start_multisig_config_op(
@@ -36,7 +36,7 @@ pub fn init(
         MultisigOpParams::AccountSettingsUpdate {
             wallet_address: *wallet_account_info.key,
             account_guid_hash: *account_guid_hash,
-            whitelist_status,
+            whitelist_enabled,
             dapps_enabled,
         },
     )
@@ -46,7 +46,7 @@ pub fn finalize(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     account_guid_hash: &BalanceAccountGuidHash,
-    whitelist_status: Option<BooleanSetting>,
+    whitelist_enabled: Option<BooleanSetting>,
     dapps_enabled: Option<BooleanSetting>,
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
@@ -62,13 +62,13 @@ pub fn finalize(
         MultisigOpParams::AccountSettingsUpdate {
             wallet_address: *wallet_account_info.key,
             account_guid_hash: *account_guid_hash,
-            whitelist_status,
+            whitelist_enabled,
             dapps_enabled,
         },
         || -> ProgramResult {
             let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow_mut())?;
-            if let Some(status) = whitelist_status {
-                wallet.update_whitelist_status(&account_guid_hash, status)?;
+            if let Some(status) = whitelist_enabled {
+                wallet.update_whitelist_enabled(&account_guid_hash, status)?;
             }
             if let Some(enabled) = dapps_enabled {
                 wallet.update_dapps_enabled(&account_guid_hash, enabled)?;

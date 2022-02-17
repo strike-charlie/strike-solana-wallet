@@ -718,7 +718,7 @@ pub async fn account_settings_update(
         MultisigOpParams::AccountSettingsUpdate {
             wallet_address: context.wallet_account.pubkey(),
             account_guid_hash: context.balance_account_guid_hash,
-            whitelist_status,
+            whitelist_enabled: whitelist_status,
             dapps_enabled,
         }
         .hash()
@@ -813,7 +813,7 @@ pub async fn verify_whitelist_status(
         .get_balance_account(&context.balance_account_guid_hash)
         .unwrap();
 
-    assert_eq!(account.whitelist_status, expected_status);
+    assert_eq!(account.whitelist_enabled, expected_status);
     assert_eq!(
         account.allowed_destinations.count_enabled(),
         expected_whitelist_count
