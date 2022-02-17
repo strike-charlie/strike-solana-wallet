@@ -645,7 +645,7 @@ impl MultisigOpParams {
                 whitelist_status,
                 dapps_enabled,
             } => {
-                let mut bytes: Vec<u8> = Vec::with_capacity(1 + PUBKEY_BYTES + 32 + 1);
+                let mut bytes: Vec<u8> = Vec::with_capacity(1 + PUBKEY_BYTES + 32 + 2 + 2);
                 bytes.push(8);
                 bytes.extend_from_slice(&wallet_address.to_bytes());
                 bytes.extend_from_slice(account_guid_hash.to_bytes());
