@@ -1,5 +1,10 @@
 #![cfg(feature = "test-bpf")]
 
+mod common;
+
+pub use common::instructions::*;
+pub use common::utils::*;
+
 use std::borrow::BorrowMut;
 
 use solana_program::instruction::Instruction;
@@ -13,11 +18,9 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer as SdkSigner;
 use solana_sdk::transaction::{Transaction, TransactionError};
 
-pub use common::instructions::*;
 use common::instructions::{
     finalize_dapp_transaction, init_dapp_transaction, init_transfer, set_approval_disposition,
 };
-pub use common::utils::*;
 use strike_wallet::error::WalletError;
 use strike_wallet::model::address_book::{DAppBookEntry, DAppBookEntryNameHash};
 use strike_wallet::model::balance_account::BalanceAccountGuidHash;
@@ -25,8 +28,6 @@ use strike_wallet::model::multisig_op::{ApprovalDisposition, BooleanSetting, Mul
 
 use crate::common::utils;
 use crate::utils::BalanceAccountTestContext;
-
-mod common;
 
 struct DAppTest {
     context: BalanceAccountTestContext,

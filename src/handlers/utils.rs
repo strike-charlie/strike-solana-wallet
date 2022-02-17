@@ -2,14 +2,18 @@ use crate::error::WalletError;
 use crate::model::balance_account::{BalanceAccount, BalanceAccountGuidHash};
 use crate::model::multisig_op::{MultisigOp, MultisigOpParams};
 use crate::model::wallet::Wallet;
-use solana_program::account_info::{next_account_info, AccountInfo};
-use solana_program::clock::Clock;
-use solana_program::entrypoint::ProgramResult;
-use solana_program::msg;
-use solana_program::program_error::ProgramError;
-use solana_program::program_pack::Pack;
-use solana_program::pubkey::Pubkey;
-use solana_program::sysvar::Sysvar;
+use solana_program::{
+    account_info::{next_account_info, AccountInfo},
+    clock::Clock,
+    entrypoint::ProgramResult,
+    msg,
+    program::invoke_signed,
+    program_error::ProgramError,
+    program_pack::Pack,
+    pubkey::Pubkey,
+    system_instruction,
+    sysvar::Sysvar,
+};
 use std::slice::Iter;
 use std::time::Duration;
 
@@ -136,4 +140,28 @@ where
     collect_remaining_balance(&multisig_op_account_info, &account_to_return_rent_to)?;
 
     Ok(())
+}
+
+pub fn transfer_sol_checked<'a>(
+    balance_account: AccountInfo<'a>,
+    account_guid_hash: &BalanceAccountGuidHash,
+    bump_seed: u8,
+    system_program_account: AccountInfo<'a>,
+    to: AccountInfo<'a>,
+    lamports: u64,
+) -> ProgramResult {
+    if balance_account.lamports() < lamports {
+        msg!(
+            "Account only has {} lamports of {} requested",
+            balance_account.lamports(),
+            lamports
+        );
+        return Err(WalletError::InsufficientBalance.into());
+    }
+    let instruction = &system_instruction::transfer(balance_account.key, to.key, lamports);
+    invoke_signed(
+        instruction,
+        &[balance_account, to, system_program_account],
+        &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
+    )
 }

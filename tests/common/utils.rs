@@ -1073,7 +1073,7 @@ pub async fn setup_balance_account_tests(
 ) -> BalanceAccountTestContext {
     let program_id = Keypair::new().pubkey();
     let mut pt = ProgramTest::new("strike_wallet", program_id, processor!(Processor::process));
-    pt.set_bpf_compute_max_units(bpf_compute_max_units.unwrap_or(25_000));
+    pt.set_bpf_compute_max_units(bpf_compute_max_units.unwrap_or(30_000));
     let (mut banks_client, payer, recent_blockhash) = pt.start().await;
     let wallet_account = Keypair::new();
     let multisig_op_account = Keypair::new();
