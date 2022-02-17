@@ -1210,8 +1210,7 @@ pub async fn setup_create_balance_account_failure_tests(
     // vec in case the given transfer_approvers vec has insufficient length.
     approvers
         .iter()
-        .enumerate()
-        .for_each(|(i, kp)| signers.push((SlotId::new(signers.len() + i), kp.pubkey_as_signer())));
+        .for_each(|kp| signers.push((SlotId::new(signers.len()), kp.pubkey_as_signer())));
 
     // take the first two signers as config approvers
     let config_approvers = signers[..2].to_vec();
