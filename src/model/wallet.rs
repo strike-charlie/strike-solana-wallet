@@ -294,7 +294,7 @@ impl Wallet {
         Ok(())
     }
 
-    pub fn dapp_allowed(&mut self, dapp: DAppBookEntry) -> bool {
+    pub fn dapp_allowed(&self, dapp: DAppBookEntry) -> bool {
         self.dapp_book.find_id(&dapp).is_some()
     }
 
