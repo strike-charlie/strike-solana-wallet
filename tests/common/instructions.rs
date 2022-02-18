@@ -9,7 +9,9 @@ use strike_wallet::instruction::{
     BalanceAccountUpdate, DAppBookUpdate, ProgramInstruction, WalletConfigPolicyUpdate,
     WalletUpdate,
 };
-use strike_wallet::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
+use strike_wallet::model::address_book::{
+    AddressBookEntry, AddressBookEntryNameHash, DAppBookEntry,
+};
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
     ApprovalDisposition, BooleanSetting, SlotUpdateType, WrapDirection,
@@ -612,7 +614,7 @@ pub fn init_dapp_transaction(
     multisig_op_account: &Pubkey,
     assistant_account: &Pubkey,
     account_guid_hash: &BalanceAccountGuidHash,
-    dapp: AddressBookEntry,
+    dapp: DAppBookEntry,
     instructions: Vec<Instruction>,
 ) -> Instruction {
     let data = ProgramInstruction::InitDAppTransaction {
@@ -644,7 +646,7 @@ pub fn finalize_dapp_transaction(
     balance_account: &Pubkey,
     rent_collector_account: &Pubkey,
     account_guid_hash: &BalanceAccountGuidHash,
-    dapp: AddressBookEntry,
+    dapp: DAppBookEntry,
     instructions: &Vec<Instruction>,
 ) -> Instruction {
     let data = ProgramInstruction::FinalizeDAppTransaction {

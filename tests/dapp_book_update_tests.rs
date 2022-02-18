@@ -9,7 +9,7 @@ use solana_sdk::signature::Keypair;
 use solana_sdk::signer::Signer as SdkSigner;
 use std::time::{Duration, SystemTime};
 use strike_wallet::instruction::DAppBookUpdate;
-use strike_wallet::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
+use strike_wallet::model::address_book::{DAppBookEntry, DAppBookEntryNameHash};
 use strike_wallet::model::multisig_op::{
     ApprovalDisposition, ApprovalDispositionRecord, MultisigOpParams, OperationDisposition,
 };
@@ -46,9 +46,9 @@ async fn test_dapp_book_update() {
     let dapp_program_id = Keypair::new().pubkey();
     let dapp_slot = (
         SlotId::new(0),
-        AddressBookEntry {
+        DAppBookEntry {
             address: dapp_program_id,
-            name_hash: AddressBookEntryNameHash::new(&hash_of(b"DApp Name")),
+            name_hash: DAppBookEntryNameHash::new(&hash_of(b"DApp Name")),
         },
     );
 

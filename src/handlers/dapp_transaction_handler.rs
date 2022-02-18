@@ -5,7 +5,7 @@ use crate::handlers::utils::{
     calculate_expires, collect_remaining_balance, get_clock_from_next_account,
     next_program_account_info, validate_balance_account_and_get_seed,
 };
-use crate::model::address_book::AddressBookEntry;
+use crate::model::address_book::DAppBookEntry;
 use crate::model::balance_account::BalanceAccountGuidHash;
 use crate::model::multisig_op::{MultisigOp, MultisigOpParams};
 use crate::model::wallet::Wallet;
@@ -23,7 +23,7 @@ pub fn init(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     account_guid_hash: &BalanceAccountGuidHash,
-    dapp: AddressBookEntry,
+    dapp: DAppBookEntry,
     instructions: Vec<Instruction>,
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
@@ -41,15 +41,11 @@ pub fn init(
 
     wallet.validate_transfer_initiator(balance_account, initiator_account_info)?;
 
-    msg!("here 1");
     if !balance_account.is_whitelist_disabled() {
-        msg!("here 2");
-        // check that the specified dapp program id is in the dapp whitelist
-        if wallet.dapp_book.find_id(&dapp).is_none() {
+        if !wallet.clone().dapp_allowed(dapp) {
             return Err(WalletError::DAppNotAllowed.into());
         }
     }
-    msg!("here 3");
 
     let mut multisig_op = MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
     multisig_op.init(
@@ -158,7 +154,7 @@ pub fn finalize(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     account_guid_hash: &BalanceAccountGuidHash,
-    dapp: AddressBookEntry,
+    dapp: DAppBookEntry,
     instructions: &Vec<Instruction>,
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();

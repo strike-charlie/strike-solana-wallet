@@ -23,7 +23,8 @@ use strike_wallet::instruction::{
     BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate, WalletUpdate,
 };
 use strike_wallet::model::address_book::{
-    AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook,
+    AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook, DAppBookEntry,
+    DAppBookEntryNameHash,
 };
 use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use strike_wallet::model::multisig_op::{
@@ -1050,7 +1051,7 @@ pub struct BalanceAccountTestContext {
     pub allowed_destination: AddressBookEntry,
     pub destination: Keypair,
     pub params_hash: Hash,
-    pub allowed_dapp: AddressBookEntry,
+    pub allowed_dapp: DAppBookEntry,
 }
 
 impl BalanceAccountTestContext {
@@ -1089,9 +1090,9 @@ pub async fn setup_balance_account_tests(
         address: Keypair::new().pubkey(),
         name_hash: AddressBookEntryNameHash::new(&hash_of(b"Destination 2 Name")),
     };
-    let allowed_dapp = AddressBookEntry {
+    let allowed_dapp = DAppBookEntry {
         address: Keypair::new().pubkey(),
-        name_hash: AddressBookEntryNameHash::new(&hash_of(b"DApp Name")),
+        name_hash: DAppBookEntryNameHash::new(&hash_of(b"DApp Name")),
     };
 
     // first initialize the wallet

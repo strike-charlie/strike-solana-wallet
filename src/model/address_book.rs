@@ -6,7 +6,7 @@ use solana_program::program_pack::{Pack, Sealed};
 use solana_program::pubkey::Pubkey;
 
 pub type AddressBook = Slots<AddressBookEntry, { Wallet::MAX_ADDRESS_BOOK_ENTRIES }>;
-pub type DAppBook = Slots<AddressBookEntry, { Wallet::MAX_DAPP_BOOK_ENTRIES }>;
+pub type DAppBook = Slots<DAppBookEntry, { Wallet::MAX_DAPP_BOOK_ENTRIES }>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Copy)]
 pub struct AddressBookEntryNameHash([u8; 32]);
@@ -54,3 +54,6 @@ impl Pack for AddressBookEntry {
         })
     }
 }
+
+pub type DAppBookEntry = AddressBookEntry;
+pub type DAppBookEntryNameHash = AddressBookEntryNameHash;

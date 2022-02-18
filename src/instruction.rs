@@ -10,7 +10,7 @@ use solana_program::program_error::ProgramError;
 use solana_program::program_pack::Pack;
 use solana_program::{instruction::AccountMeta, instruction::Instruction, pubkey::Pubkey};
 
-use crate::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
+use crate::model::address_book::{AddressBookEntry, AddressBookEntryNameHash, DAppBookEntry};
 use crate::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use crate::model::multisig_op::{
     ApprovalDisposition, BooleanSetting, SlotUpdateType, WrapDirection,
@@ -184,7 +184,7 @@ pub enum ProgramInstruction {
     InitDAppTransaction {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,
-        dapp: AddressBookEntry,
+        dapp: DAppBookEntry,
     },
 
     /// 0. `[writable]` The multisig operation account
@@ -195,7 +195,7 @@ pub enum ProgramInstruction {
     FinalizeDAppTransaction {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,
-        dapp: AddressBookEntry,
+        dapp: DAppBookEntry,
     },
 
     /// 0  `[writable]` The multisig operation account
@@ -380,7 +380,7 @@ impl ProgramInstruction {
             } => {
                 buf.push(16);
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
-                let mut buf2 = vec![0; AddressBookEntry::LEN];
+                let mut buf2 = vec![0; DAppBookEntry::LEN];
                 dapp.pack_into_slice(buf2.as_mut_slice());
                 buf.extend_from_slice(&buf2[..]);
                 buf.put_u16_le(instructions.len() as u16);
@@ -395,7 +395,7 @@ impl ProgramInstruction {
             } => {
                 buf.push(17);
                 buf.extend_from_slice(&account_guid_hash.to_bytes());
-                let mut buf2 = vec![0; AddressBookEntry::LEN];
+                let mut buf2 = vec![0; DAppBookEntry::LEN];
                 dapp.pack_into_slice(buf2.as_mut_slice());
                 buf.extend_from_slice(&buf2[..]);
                 buf.put_u16_le(instructions.len() as u16);
@@ -698,8 +698,8 @@ impl ProgramInstruction {
         let account_guid_hash = unpack_account_guid_hash(
             utils::read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
         )?;
-        let dapp = AddressBookEntry::unpack_from_slice(
-            utils::read_slice(iter, AddressBookEntry::LEN)
+        let dapp = DAppBookEntry::unpack_from_slice(
+            utils::read_slice(iter, DAppBookEntry::LEN)
                 .ok_or(ProgramError::InvalidInstructionData)?,
         )?;
         Ok(Self::InitDAppTransaction {
@@ -716,8 +716,8 @@ impl ProgramInstruction {
         let account_guid_hash = unpack_account_guid_hash(
             utils::read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
         )?;
-        let dapp = AddressBookEntry::unpack_from_slice(
-            utils::read_slice(iter, AddressBookEntry::LEN)
+        let dapp = DAppBookEntry::unpack_from_slice(
+            utils::read_slice(iter, DAppBookEntry::LEN)
                 .ok_or(ProgramError::InvalidInstructionData)?,
         )?;
         Ok(Self::FinalizeDAppTransaction {
@@ -909,8 +909,8 @@ impl BalanceAccountUpdate {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DAppBookUpdate {
-    pub add_dapps: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
-    pub remove_dapps: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    pub add_dapps: Vec<(SlotId<DAppBookEntry>, DAppBookEntry)>,
+    pub remove_dapps: Vec<(SlotId<DAppBookEntry>, DAppBookEntry)>,
 }
 
 impl DAppBookUpdate {

@@ -19,7 +19,7 @@ use common::instructions::{
 };
 pub use common::utils::*;
 use strike_wallet::error::WalletError;
-use strike_wallet::model::address_book::{AddressBookEntry, AddressBookEntryNameHash};
+use strike_wallet::model::address_book::{DAppBookEntry, DAppBookEntryNameHash};
 use strike_wallet::model::balance_account::BalanceAccountGuidHash;
 use strike_wallet::model::multisig_op::{ApprovalDisposition, BooleanSetting, MultisigOp};
 
@@ -32,7 +32,7 @@ struct DAppTest {
     context: BalanceAccountTestContext,
     balance_account: Pubkey,
     multisig_op_account: Keypair,
-    dapp: AddressBookEntry,
+    dapp: DAppBookEntry,
     inner_instructions: Vec<Instruction>,
     inner_multisig_op_account: Keypair,
 }
@@ -54,9 +54,9 @@ async fn setup_dapp_test() -> DAppTest {
     .await;
 
     let inner_multisig_op_account = Keypair::new();
-    let dapp = AddressBookEntry {
+    let dapp = DAppBookEntry {
         address: context.program_id.clone(),
-        name_hash: AddressBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
+        name_hash: DAppBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
     };
 
     let inner_instructions = vec![
@@ -391,9 +391,9 @@ async fn test_dapp_transaction_with_spl_transfers() {
         .unwrap(),
     ];
 
-    let dapp = AddressBookEntry {
+    let dapp = DAppBookEntry {
         address: context.program_id.clone(),
-        name_hash: AddressBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
+        name_hash: DAppBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
     };
 
     context
@@ -462,9 +462,9 @@ async fn test_dapp_transaction_without_dapps_enabled() {
     let rent = context.banks_client.get_rent().await.unwrap();
     let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
     let multisig_op_account = Keypair::new();
-    let dapp = AddressBookEntry {
+    let dapp = DAppBookEntry {
         address: context.program_id.clone(),
-        name_hash: AddressBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
+        name_hash: DAppBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
     };
     assert_eq!(
         context
@@ -519,9 +519,9 @@ async fn test_dapp_transaction_unwhitelisted() {
     let rent = context.banks_client.get_rent().await.unwrap();
     let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
     let multisig_op_account = Keypair::new();
-    let dapp = AddressBookEntry {
+    let dapp = DAppBookEntry {
         address: context.program_id.clone(),
-        name_hash: AddressBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
+        name_hash: DAppBookEntryNameHash::new(&hash_of(b"Strike Wallet")),
     };
     assert_eq!(
         context

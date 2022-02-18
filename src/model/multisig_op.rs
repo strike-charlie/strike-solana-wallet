@@ -3,7 +3,7 @@ use crate::instruction::{
     append_instruction, BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate,
     WalletUpdate,
 };
-use crate::model::address_book::AddressBookEntry;
+use crate::model::address_book::DAppBookEntry;
 use crate::model::balance_account::BalanceAccountGuidHash;
 use crate::model::signer::Signer;
 use crate::model::wallet::Wallet;
@@ -478,7 +478,7 @@ pub enum MultisigOpParams {
     DAppTransaction {
         wallet_address: Pubkey,
         account_guid_hash: BalanceAccountGuidHash,
-        dapp: AddressBookEntry,
+        dapp: DAppBookEntry,
         instructions: Vec<Instruction>,
     },
     UpdateAccountSettings {
@@ -626,7 +626,7 @@ impl MultisigOpParams {
                 bytes.extend_from_slice(&wallet_address.to_bytes());
                 bytes.extend_from_slice(&account_guid_hash.to_bytes());
                 bytes.put_u16_le(instructions.len().as_u16());
-                let mut buf = vec![0; AddressBookEntry::LEN];
+                let mut buf = vec![0; DAppBookEntry::LEN];
                 dapp.pack_into_slice(buf.as_mut_slice());
                 bytes.extend_from_slice(&buf[..]);
                 for instruction in instructions.into_iter() {
