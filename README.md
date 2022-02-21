@@ -7,10 +7,10 @@
 # Overview
 
 The Strike Wallet is a Solana multi-approver program-based wallet suitable for
-use by institutions and enterprises requiring highly-secure access to the
-Solana ecosystem. It supports SOL and SPL tokens, staking and dApps. The
-multi-approver protocol applies to transfers and dApp transactions, policy
-changes, and recovery, with a different approver policy for each of these.
+use by institutions and anyone else looking for effortless institutional-grade
+access to the Solana ecosystem. It supports SOL and SPL tokens, staking and
+dApps. The multi-approver protocol applies to transfers and dApp transactions,
+policy changes, and recovery, with a different approver policy for each of these.
 
 # Building
 
