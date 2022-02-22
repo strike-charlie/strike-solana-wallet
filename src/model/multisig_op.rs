@@ -1,7 +1,7 @@
 use crate::error::WalletError;
 use crate::instruction::{
-    append_instruction, BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate,
-    WalletUpdate,
+    append_instruction, AddressBookUpdate, BalanceAccountUpdate, DAppBookUpdate,
+    WalletConfigPolicyUpdate, WalletUpdate,
 };
 use crate::model::address_book::DAppBookEntry;
 use crate::model::balance_account::BalanceAccountGuidHash;
@@ -491,9 +491,42 @@ pub enum MultisigOpParams {
         wallet_address: Pubkey,
         update: DAppBookUpdate,
     },
+    AddressBookUpdate {
+        wallet_address: Pubkey,
+        update: AddressBookUpdate,
+    },
 }
 
 impl MultisigOpParams {
+    fn hash_wallet_update_op(
+        type_code: u8,
+        wallet_address: &Pubkey,
+        update_bytes: Vec<u8>,
+    ) -> Hash {
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.resize(1 + PUBKEY_BYTES + update_bytes.len(), 0);
+        bytes[0] = type_code; // type code
+        bytes[1..1 + PUBKEY_BYTES].copy_from_slice(&wallet_address.to_bytes());
+        bytes[1 + PUBKEY_BYTES..1 + PUBKEY_BYTES + update_bytes.len()]
+            .copy_from_slice(&update_bytes);
+        hash(&bytes)
+    }
+
+    fn hash_balance_account_update_op(
+        type_code: u8,
+        wallet_address: &Pubkey,
+        account_guid_hash: &BalanceAccountGuidHash,
+        update_bytes: Vec<u8>,
+    ) -> Hash {
+        let mut bytes: Vec<u8> = Vec::new();
+        bytes.resize(1 + PUBKEY_BYTES + 32 + update_bytes.len(), 0);
+        bytes[0] = type_code; // type code
+        bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
+        bytes[33..65].copy_from_slice(account_guid_hash.to_bytes());
+        bytes[65..65 + update_bytes.len()].copy_from_slice(&update_bytes);
+        hash(&bytes)
+    }
+
     pub fn hash(&self) -> Hash {
         match self {
             MultisigOpParams::UpdateWallet {
@@ -502,14 +535,7 @@ impl MultisigOpParams {
             } => {
                 let mut update_bytes: Vec<u8> = Vec::new();
                 update.pack(&mut update_bytes);
-
-                let mut bytes: Vec<u8> = Vec::new();
-                bytes.resize(1 + PUBKEY_BYTES + update_bytes.len(), 0);
-                bytes[0] = 0; // type code
-                bytes[1..1 + PUBKEY_BYTES].copy_from_slice(&wallet_address.to_bytes());
-                bytes[1 + PUBKEY_BYTES..1 + PUBKEY_BYTES + update_bytes.len()]
-                    .copy_from_slice(&update_bytes);
-                hash(&bytes)
+                Self::hash_wallet_update_op(0, wallet_address, update_bytes)
             }
             MultisigOpParams::CreateBalanceAccount {
                 wallet_address,
@@ -518,14 +544,12 @@ impl MultisigOpParams {
             } => {
                 let mut update_bytes: Vec<u8> = Vec::new();
                 update.pack(&mut update_bytes);
-
-                let mut bytes: Vec<u8> = Vec::new();
-                bytes.resize(1 + PUBKEY_BYTES + 32 + update_bytes.len(), 0);
-                bytes[0] = 1; // type code
-                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
-                bytes[33..65].copy_from_slice(account_guid_hash.to_bytes());
-                bytes[65..65 + update_bytes.len()].copy_from_slice(&update_bytes);
-                hash(&bytes)
+                Self::hash_balance_account_update_op(
+                    1,
+                    wallet_address,
+                    account_guid_hash,
+                    update_bytes,
+                )
             }
             MultisigOpParams::UpdateBalanceAccount {
                 wallet_address,
@@ -534,14 +558,12 @@ impl MultisigOpParams {
             } => {
                 let mut update_bytes: Vec<u8> = Vec::new();
                 update.pack(&mut update_bytes);
-
-                let mut bytes: Vec<u8> = Vec::new();
-                bytes.resize(1 + PUBKEY_BYTES + 32 + update_bytes.len(), 0);
-                bytes[0] = 2; // type code
-                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
-                bytes[33..65].copy_from_slice(account_guid_hash.to_bytes());
-                bytes[65..65 + update_bytes.len()].copy_from_slice(&update_bytes);
-                hash(&bytes)
+                Self::hash_balance_account_update_op(
+                    2,
+                    wallet_address,
+                    account_guid_hash,
+                    update_bytes,
+                )
             }
             MultisigOpParams::Transfer {
                 wallet_address,
@@ -641,14 +663,7 @@ impl MultisigOpParams {
             } => {
                 let mut update_bytes: Vec<u8> = Vec::new();
                 update.pack(&mut update_bytes);
-
-                let mut bytes: Vec<u8> = Vec::new();
-                bytes.resize(1 + PUBKEY_BYTES + update_bytes.len(), 0);
-                bytes[0] = 6; // type code
-                bytes[1..1 + PUBKEY_BYTES].copy_from_slice(&wallet_address.to_bytes());
-                bytes[1 + PUBKEY_BYTES..1 + PUBKEY_BYTES + update_bytes.len()]
-                    .copy_from_slice(&update_bytes);
-                hash(&bytes)
+                Self::hash_wallet_update_op(6, wallet_address, update_bytes)
             }
             MultisigOpParams::UpdateAccountSettings {
                 wallet_address,
@@ -670,14 +685,15 @@ impl MultisigOpParams {
             } => {
                 let mut update_bytes: Vec<u8> = Vec::new();
                 update.pack(&mut update_bytes);
-
-                let mut bytes: Vec<u8> = Vec::new();
-                bytes.resize(1 + PUBKEY_BYTES + update_bytes.len(), 0);
-                bytes[0] = 9; // type code
-                bytes[1..1 + PUBKEY_BYTES].copy_from_slice(&wallet_address.to_bytes());
-                bytes[1 + PUBKEY_BYTES..1 + PUBKEY_BYTES + update_bytes.len()]
-                    .copy_from_slice(&update_bytes);
-                hash(&bytes)
+                Self::hash_wallet_update_op(9, wallet_address, update_bytes)
+            }
+            MultisigOpParams::AddressBookUpdate {
+                wallet_address,
+                update,
+            } => {
+                let mut update_bytes: Vec<u8> = Vec::new();
+                update.pack(&mut update_bytes);
+                Self::hash_wallet_update_op(10, wallet_address, update_bytes)
             }
         }
     }

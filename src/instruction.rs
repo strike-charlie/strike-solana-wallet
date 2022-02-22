@@ -228,6 +228,18 @@ pub enum ProgramInstruction {
     /// 2. `[signer]` The rent collector account
     /// 3. `[]` The sysvar clock account
     FinalizeDAppBookUpdate { update: DAppBookUpdate },
+
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[]` The wallet account
+    /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 3. `[]` The sysvar clock account
+    InitAddressBookUpdate { update: AddressBookUpdate },
+
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[writable]` The wallet account
+    /// 2. `[signer]` The rent collector account
+    /// 3. `[]` The sysvar clock account
+    FinalizeAddressBookUpdate { update: AddressBookUpdate },
 }
 
 impl ProgramInstruction {
@@ -435,6 +447,18 @@ impl ProgramInstruction {
                 update.pack(&mut update_bytes);
                 buf.extend_from_slice(&update_bytes);
             }
+            &ProgramInstruction::InitAddressBookUpdate { ref update } => {
+                let mut update_bytes: Vec<u8> = Vec::new();
+                update.pack(&mut update_bytes);
+                buf.push(22);
+                buf.extend_from_slice(&update_bytes);
+            }
+            &ProgramInstruction::FinalizeAddressBookUpdate { ref update } => {
+                let mut update_bytes: Vec<u8> = Vec::new();
+                update.pack(&mut update_bytes);
+                buf.push(23);
+                buf.extend_from_slice(&update_bytes);
+            }
         }
         buf
     }
@@ -466,6 +490,8 @@ impl ProgramInstruction {
             19 => Self::unpack_finalize_account_settings_update_instruction(rest)?,
             20 => Self::unpack_init_dapp_book_update_instruction(rest)?,
             21 => Self::unpack_finalize_dapp_book_update_instruction(rest)?,
+            22 => Self::unpack_init_address_book_update_instruction(rest)?,
+            23 => Self::unpack_finalize_address_book_update_instruction(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -768,6 +794,22 @@ impl ProgramInstruction {
             update: DAppBookUpdate::unpack(bytes)?,
         })
     }
+
+    fn unpack_init_address_book_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::InitAddressBookUpdate {
+            update: AddressBookUpdate::unpack(bytes)?,
+        })
+    }
+
+    fn unpack_finalize_address_book_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::FinalizeAddressBookUpdate {
+            update: AddressBookUpdate::unpack(bytes)?,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -820,6 +862,62 @@ impl WalletUpdate {
         append_signers(&self.remove_config_approvers, dst);
         append_address_book_entries(&self.add_address_book_entries, dst);
         append_address_book_entries(&self.remove_address_book_entries, dst);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct BalanceAccountWhitelistUpdate {
+    pub guid_hash: BalanceAccountGuidHash,
+    pub add_allowed_destinations: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    pub remove_allowed_destinations: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+}
+
+impl BalanceAccountWhitelistUpdate {
+    fn unpack_from_slice(
+        iter: &mut Iter<u8>,
+    ) -> Result<BalanceAccountWhitelistUpdate, ProgramError> {
+        Ok(BalanceAccountWhitelistUpdate {
+            guid_hash: unpack_account_guid_hash(
+                utils::read_slice(iter, 32).ok_or(ProgramError::InvalidInstructionData)?,
+            )?,
+            add_allowed_destinations: read_address_book_entries(iter)?,
+            remove_allowed_destinations: read_address_book_entries(iter)?,
+        })
+    }
+
+    pub fn pack_into_slice(&self, dst: &mut Vec<u8>) {
+        dst.extend_from_slice(&self.guid_hash.to_bytes());
+        append_address_book_entries(&self.add_allowed_destinations, dst);
+        append_address_book_entries(&self.remove_allowed_destinations, dst);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct AddressBookUpdate {
+    pub add_address_book_entries: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    pub remove_address_book_entries: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    pub balance_account_whitelist_updates: Vec<BalanceAccountWhitelistUpdate>,
+}
+
+impl AddressBookUpdate {
+    fn unpack(bytes: &[u8]) -> Result<AddressBookUpdate, ProgramError> {
+        let mut iter = bytes.iter();
+
+        let add_address_book_entries = read_address_book_entries(&mut iter)?;
+        let remove_address_book_entries = read_address_book_entries(&mut iter)?;
+        let balance_account_whitelist_updates = read_balance_account_whitelist_updates(&mut iter)?;
+
+        Ok(AddressBookUpdate {
+            add_address_book_entries,
+            remove_address_book_entries,
+            balance_account_whitelist_updates,
+        })
+    }
+
+    pub fn pack(&self, dst: &mut Vec<u8>) {
+        append_address_book_entries(&self.add_address_book_entries, dst);
+        append_address_book_entries(&self.remove_address_book_entries, dst);
+        append_balance_account_whitelist_updates(&self.balance_account_whitelist_updates, dst);
     }
 }
 
@@ -1080,4 +1178,25 @@ fn unpack_account_guid_hash(bytes: &[u8]) -> Result<BalanceAccountGuidHash, Prog
                 .map(|bytes| BalanceAccountGuidHash::new(bytes))
         })
         .ok_or(ProgramError::InvalidInstructionData)
+}
+
+fn append_balance_account_whitelist_updates(
+    entries: &Vec<BalanceAccountWhitelistUpdate>,
+    dst: &mut Vec<u8>,
+) {
+    dst.push(entries.len() as u8);
+    for entry in entries.iter() {
+        entry.pack_into_slice(dst);
+    }
+}
+
+fn read_balance_account_whitelist_updates(
+    iter: &mut Iter<u8>,
+) -> Result<Vec<BalanceAccountWhitelistUpdate>, ProgramError> {
+    let entries_count = *read_u8(iter).ok_or(ProgramError::InvalidInstructionData)? as usize;
+    let mut updates: Vec<BalanceAccountWhitelistUpdate> = Vec::with_capacity(entries_count);
+    for _ in 0..entries_count {
+        updates.push(BalanceAccountWhitelistUpdate::unpack_from_slice(iter)?)
+    }
+    Ok(updates)
 }

@@ -1,6 +1,6 @@
 use crate::error::WalletError;
 use crate::instruction::{
-    BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate, WalletUpdate,
+    AddressBookUpdate, BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate, WalletUpdate,
 };
 use crate::model::address_book::{
     AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook, DAppBookEntry,
@@ -230,6 +230,29 @@ impl Wallet {
             return Err(WalletError::NoApproversEnabled.into());
         }
 
+        Ok(())
+    }
+
+    pub fn validate_address_book_update(&self, update: &AddressBookUpdate) -> ProgramResult {
+        let mut self_clone = self.clone();
+        self_clone.update_address_book(update)
+    }
+
+    pub fn update_address_book(&mut self, update: &AddressBookUpdate) -> ProgramResult {
+        self.add_address_book_entries(&update.add_address_book_entries)?;
+        for balance_account_whitelist_update in update.balance_account_whitelist_updates.clone() {
+            let balance_account_idx =
+                self.get_balance_account_index(&balance_account_whitelist_update.guid_hash)?;
+            self.disable_transfer_destinations(
+                balance_account_idx,
+                &balance_account_whitelist_update.remove_allowed_destinations,
+            )?;
+            self.enable_transfer_destinations(
+                balance_account_idx,
+                &balance_account_whitelist_update.add_allowed_destinations,
+            )?;
+        }
+        self.remove_address_book_entries(&update.remove_address_book_entries)?;
         Ok(())
     }
 
@@ -585,6 +608,11 @@ impl Wallet {
         if !self.address_book.contains(destinations) {
             msg!("Failed to enable transfer destinations: address book does not contain one of the given destinations");
             return Err(WalletError::InvalidSlot.into());
+        }
+        let balance_account = &mut self.balance_accounts[balance_account_index].borrow_mut();
+        if !destinations.is_empty() && balance_account.is_whitelist_disabled() {
+            msg!("Cannot add destinations when whitelisting status is Off");
+            return Err(WalletError::WhitelistDisabled.into());
         }
         self.balance_accounts[balance_account_index]
             .allowed_destinations

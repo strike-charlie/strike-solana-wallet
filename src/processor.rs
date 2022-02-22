@@ -1,5 +1,5 @@
 use crate::handlers::{
-    account_settings_update_handler, approval_disposition_handler,
+    account_settings_update_handler, address_book_update_handler, approval_disposition_handler,
     balance_account_creation_handler, balance_account_update_handler, dapp_book_update_handler,
     dapp_transaction_handler, init_wallet_handler, transfer_handler, update_signer_handler,
     wallet_config_policy_update_handler, wallet_update_handler, wrap_unwrap_handler,
@@ -214,6 +214,14 @@ impl Processor {
 
             ProgramInstruction::FinalizeDAppBookUpdate { update } => {
                 dapp_book_update_handler::finalize(program_id, &accounts, &update)
+            }
+
+            ProgramInstruction::InitAddressBookUpdate { update } => {
+                address_book_update_handler::init(program_id, accounts, &update)
+            }
+
+            ProgramInstruction::FinalizeAddressBookUpdate { update } => {
+                address_book_update_handler::finalize(program_id, accounts, &update)
             }
         }
     }

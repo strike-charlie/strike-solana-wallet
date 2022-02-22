@@ -1,4 +1,5 @@
 pub mod account_settings_update_handler;
+pub mod address_book_update_handler;
 pub mod approval_disposition_handler;
 pub mod balance_account_creation_handler;
 pub mod balance_account_update_handler;

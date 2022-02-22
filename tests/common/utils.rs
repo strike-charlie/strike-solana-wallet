@@ -1,10 +1,11 @@
 use crate::common::instructions;
 use crate::common::instructions::{
-    finalize_account_settings_update, finalize_balance_account_update, finalize_update_signer,
+    finalize_account_settings_update, finalize_update_signer,
     finalize_wallet_config_policy_update_instruction, init_account_settings_update,
-    init_balance_account_creation, init_balance_account_update, init_transfer, init_update_signer,
+    init_balance_account_creation, init_transfer, init_update_signer,
     init_wallet_config_policy_update_instruction, init_wallet_update, set_approval_disposition,
 };
+use crate::{finalize_address_book_update, init_address_book_update};
 use arrayref::array_ref;
 use itertools::Itertools;
 use sha2::{Digest, Sha256};
@@ -20,7 +21,8 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strike_wallet::instruction::{
-    BalanceAccountUpdate, DAppBookUpdate, WalletConfigPolicyUpdate, WalletUpdate,
+    AddressBookUpdate, BalanceAccountUpdate, BalanceAccountWhitelistUpdate, DAppBookUpdate,
+    WalletConfigPolicyUpdate, WalletUpdate,
 };
 use strike_wallet::model::address_book::{
     AddressBook, AddressBookEntry, AddressBookEntryNameHash, DAppBook, DAppBookEntry,
@@ -1483,6 +1485,25 @@ pub async fn modify_whitelist(
     destinations_to_remove: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
     expected_error: Option<InstructionError>,
 ) {
+    modify_address_book_and_whitelist(
+        context,
+        vec![],
+        vec![],
+        destinations_to_add,
+        destinations_to_remove,
+        expected_error,
+    )
+    .await;
+}
+
+pub async fn modify_address_book_and_whitelist(
+    context: &mut BalanceAccountTestContext,
+    entries_to_add: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    entries_to_remove: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    whitelist_destinations_to_add: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    whitelist_destinations_to_remove: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    expected_error: Option<InstructionError>,
+) {
     // add a whitelisted destination
     let rent = context.banks_client.get_rent().await.unwrap();
     let multisig_op_rent = rent.minimum_balance(MultisigOp::LEN);
@@ -1497,19 +1518,18 @@ pub async fn modify_whitelist(
                 MultisigOp::LEN as u64,
                 &context.program_id,
             ),
-            init_balance_account_update(
+            init_address_book_update(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
                 &context.assistant_account.pubkey(),
-                context.balance_account_guid_hash,
-                context.balance_account_name_hash,
-                2,
-                Duration::from_secs(120),
-                vec![],
-                vec![],
-                destinations_to_add.clone(),
-                destinations_to_remove.clone(),
+                entries_to_add.clone(),
+                entries_to_remove.clone(),
+                vec![BalanceAccountWhitelistUpdate {
+                    guid_hash: context.balance_account_guid_hash.clone(),
+                    add_allowed_destinations: whitelist_destinations_to_add.clone(),
+                    remove_allowed_destinations: whitelist_destinations_to_remove.clone(),
+                }],
             ),
         ],
         Some(&context.payer.pubkey()),
@@ -1552,24 +1572,23 @@ pub async fn modify_whitelist(
     )
     .await;
 
-    let expected_config_update = BalanceAccountUpdate {
-        name_hash: context.balance_account_name_hash,
-        approvals_required_for_transfer: 2,
-        approval_timeout_for_transfer: Duration::from_secs(120),
-        add_transfer_approvers: vec![],
-        remove_transfer_approvers: vec![],
-        add_allowed_destinations: destinations_to_add,
-        remove_allowed_destinations: destinations_to_remove,
+    let expected_config_update = AddressBookUpdate {
+        add_address_book_entries: entries_to_add.clone(),
+        remove_address_book_entries: entries_to_remove.clone(),
+        balance_account_whitelist_updates: vec![BalanceAccountWhitelistUpdate {
+            guid_hash: context.balance_account_guid_hash.clone(),
+            add_allowed_destinations: whitelist_destinations_to_add.clone(),
+            remove_allowed_destinations: whitelist_destinations_to_remove.clone(),
+        }],
     };
 
     // finalize the config update
     let finalize_update = Transaction::new_signed_with_payer(
-        &[finalize_balance_account_update(
+        &[finalize_address_book_update(
             &context.program_id,
             &context.wallet_account.pubkey(),
             &multisig_op_account.pubkey(),
             &context.payer.pubkey(),
-            context.balance_account_guid_hash,
             expected_config_update,
         )],
         Some(&context.payer.pubkey()),

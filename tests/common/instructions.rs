@@ -6,8 +6,8 @@ use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::time::Duration;
 use strike_wallet::instruction::{
-    BalanceAccountUpdate, DAppBookUpdate, ProgramInstruction, WalletConfigPolicyUpdate,
-    WalletUpdate,
+    AddressBookUpdate, BalanceAccountUpdate, BalanceAccountWhitelistUpdate, DAppBookUpdate,
+    ProgramInstruction, WalletConfigPolicyUpdate, WalletUpdate,
 };
 use strike_wallet::model::address_book::{
     AddressBookEntry, AddressBookEntryNameHash, DAppBookEntry,
@@ -753,6 +753,54 @@ pub fn finalize_account_settings_update(
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new(*wallet_account, false),
         AccountMeta::new(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+    ];
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn init_address_book_update(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    assistant_account: &Pubkey,
+    add_address_book_entries: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    remove_address_book_entries: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    balance_account_whitelist_updates: Vec<BalanceAccountWhitelistUpdate>,
+) -> Instruction {
+    init_multisig_op(
+        program_id,
+        wallet_account,
+        multisig_op_account,
+        assistant_account,
+        ProgramInstruction::InitAddressBookUpdate {
+            update: AddressBookUpdate {
+                add_address_book_entries: add_address_book_entries.clone(),
+                remove_address_book_entries: remove_address_book_entries.clone(),
+                balance_account_whitelist_updates: balance_account_whitelist_updates.clone(),
+            },
+        },
+    )
+}
+
+pub fn finalize_address_book_update(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    update: AddressBookUpdate,
+) -> Instruction {
+    let data = ProgramInstruction::FinalizeAddressBookUpdate { update }
+        .borrow()
+        .pack();
+    let accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*wallet_account, false),
+        AccountMeta::new_readonly(*rent_collector_account, true),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
 
