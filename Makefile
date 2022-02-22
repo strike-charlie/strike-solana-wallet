@@ -15,7 +15,7 @@ format:
 	cargo fmt
 
 test:
-	cargo test-bpf -- --nocapture
+	cargo test-bpf ${tests} -- --nocapture
 
 deploy_and_test: build deploy test
 
