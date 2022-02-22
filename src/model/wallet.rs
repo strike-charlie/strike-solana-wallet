@@ -620,9 +620,9 @@ impl Pack for Wallet {
         1 + // approvals_required_for_config
         8 + // approval_timeout_for_config
         Approvers::STORAGE_SIZE + // config approvers
-        1 + BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS + // balance accounts with size
         1 + // config_policy_update_locked
-        DAppBook::LEN;
+        DAppBook::LEN +
+        1 + BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS; // balance accounts with size
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let dst = array_mut_ref![dst, 0, Wallet::LEN];
@@ -634,10 +634,10 @@ impl Pack for Wallet {
             approvals_required_for_config_dst,
             approval_timeout_for_config_dst,
             config_approvers_dst,
-            balance_accounts_count_dst,
-            balance_accounts_dst,
             config_policy_update_locked_dst,
             dapp_book_dst,
+            balance_accounts_count_dst,
+            balance_accounts_dst,
         ) = mut_array_refs![
             dst,
             1,
@@ -648,9 +648,9 @@ impl Pack for Wallet {
             8,
             Approvers::STORAGE_SIZE,
             1,
-            BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS,
+            DAppBook::LEN,
             1,
-            DAppBook::LEN
+            BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS
         ];
 
         is_initialized_dst[0] = self.is_initialized as u8;
@@ -686,10 +686,10 @@ impl Pack for Wallet {
             approvals_required_for_config,
             approval_timeout_for_config,
             config_approvers_src,
-            balance_accounts_count,
-            balance_accounts_src,
             config_policy_update_locked_src,
             dapp_book_src,
+            balance_accounts_count,
+            balance_accounts_src,
         ) = array_refs![
             src,
             1,
@@ -700,9 +700,9 @@ impl Pack for Wallet {
             8,
             Approvers::STORAGE_SIZE,
             1,
-            BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS,
+            DAppBook::LEN,
             1,
-            DAppBook::LEN
+            BalanceAccount::LEN * Wallet::MAX_BALANCE_ACCOUNTS
         ];
 
         let mut balance_accounts = Vec::with_capacity(Wallet::MAX_BALANCE_ACCOUNTS);
