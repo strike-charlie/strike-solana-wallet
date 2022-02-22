@@ -4,7 +4,7 @@ use crate::instruction::{
     WalletConfigPolicyUpdate, WalletUpdate,
 };
 use crate::model::address_book::DAppBookEntry;
-use crate::model::balance_account::BalanceAccountGuidHash;
+use crate::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use crate::model::signer::Signer;
 use crate::model::wallet::Wallet;
 use crate::utils::{pack_option, SlotId};
@@ -256,6 +256,7 @@ impl MultisigOp {
         }
 
         if !approver.is_signer {
+            println!("APPROVER {} NOT A SIGNER", approver.key);
             return Err(WalletError::InvalidSignature.into());
         }
 
@@ -451,6 +452,11 @@ pub enum MultisigOpParams {
         wallet_address: Pubkey,
         account_guid_hash: BalanceAccountGuidHash,
         update: BalanceAccountUpdate,
+    },
+    UpdateBalanceAccountName {
+        wallet_address: Pubkey,
+        account_guid_hash: BalanceAccountGuidHash,
+        account_name_hash: BalanceAccountNameHash,
     },
     Transfer {
         wallet_address: Pubkey,
@@ -694,6 +700,19 @@ impl MultisigOpParams {
                 let mut update_bytes: Vec<u8> = Vec::new();
                 update.pack(&mut update_bytes);
                 Self::hash_wallet_update_op(10, wallet_address, update_bytes)
+            }
+            MultisigOpParams::UpdateBalanceAccountName {
+                wallet_address,
+                account_guid_hash,
+                account_name_hash,
+            } => {
+                let mut bytes: Vec<u8> = Vec::new();
+                bytes.resize(97, 0);
+                bytes[0] = 10; // type code
+                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
+                bytes[33..65].copy_from_slice(account_guid_hash.to_bytes());
+                bytes[65..97].copy_from_slice(account_name_hash.to_bytes());
+                hash(&bytes)
             }
         }
     }

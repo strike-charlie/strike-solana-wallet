@@ -1,9 +1,10 @@
 use crate::common::instructions;
 use crate::common::instructions::{
-    finalize_account_settings_update, finalize_update_signer,
+    finalize_account_settings_update, finalize_balance_account_name_update, finalize_update_signer,
     finalize_wallet_config_policy_update_instruction, init_account_settings_update,
-    init_balance_account_creation, init_transfer, init_update_signer,
-    init_wallet_config_policy_update_instruction, init_wallet_update, set_approval_disposition,
+    init_balance_account_creation, init_balance_account_name_update, init_transfer,
+    init_update_signer, init_wallet_config_policy_update_instruction, init_wallet_update,
+    set_approval_disposition,
 };
 use crate::{finalize_address_book_update, init_address_book_update};
 use arrayref::array_ref;
@@ -879,6 +880,18 @@ pub async fn verify_dapps_enabled(
     assert_eq!(account.dapps_enabled, expected_enabled);
 }
 
+pub async fn verify_balance_account_name_hash(
+    context: &mut BalanceAccountTestContext,
+    expected_name_hash: &BalanceAccountNameHash,
+) {
+    let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
+    let account = wallet
+        .get_balance_account(&context.balance_account_guid_hash)
+        .unwrap();
+
+    assert_eq!(account.name_hash, *expected_name_hash);
+}
+
 pub async fn approve_or_deny_n_of_n_multisig_op(
     banks_client: &mut BanksClient,
     program_id: &Pubkey,
@@ -1600,6 +1613,82 @@ pub async fn modify_address_book_and_whitelist(
         .process_transaction(finalize_update)
         .await
         .unwrap();
+}
+
+pub async fn update_balance_account_name_hash(
+    context: &mut BalanceAccountTestContext,
+    new_account_name_hash: &BalanceAccountNameHash,
+) -> Keypair {
+    let rent = context.banks_client.get_rent().await.unwrap();
+    let multisig_op_rent = rent.minimum_balance(MultisigOp::LEN);
+    let multisig_op_account = Keypair::new();
+
+    let init_update_tx = Transaction::new_signed_with_payer(
+        &[
+            system_instruction::create_account(
+                &context.payer.pubkey(),
+                &multisig_op_account.pubkey(),
+                multisig_op_rent,
+                MultisigOp::LEN as u64,
+                &context.program_id,
+            ),
+            init_balance_account_name_update(
+                &context.program_id,
+                &context.wallet_account.pubkey(),
+                &multisig_op_account.pubkey(),
+                &context.assistant_account.pubkey(),
+                context.balance_account_guid_hash,
+                *new_account_name_hash,
+            ),
+        ],
+        Some(&context.payer.pubkey()),
+        &[
+            &context.payer,
+            &multisig_op_account,
+            &context.assistant_account,
+        ],
+        context.recent_blockhash,
+    );
+
+    context
+        .banks_client
+        .process_transaction(init_update_tx)
+        .await
+        .unwrap();
+
+    approve_or_deny_n_of_n_multisig_op(
+        context.banks_client.borrow_mut(),
+        &context.program_id,
+        &multisig_op_account.pubkey(),
+        vec![&context.approvers[0], &context.approvers[1]],
+        &context.payer,
+        context.recent_blockhash,
+        ApprovalDisposition::APPROVE,
+        OperationDisposition::APPROVED,
+    )
+    .await;
+
+    // finalize the config update
+    let finalize_update_tx = Transaction::new_signed_with_payer(
+        &[finalize_balance_account_name_update(
+            &context.program_id,
+            &context.wallet_account.pubkey(),
+            &multisig_op_account.pubkey(),
+            &context.payer.pubkey(),
+            context.balance_account_guid_hash,
+            *new_account_name_hash,
+        )],
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.recent_blockhash,
+    );
+    context
+        .banks_client
+        .process_transaction(finalize_update_tx)
+        .await
+        .unwrap();
+
+    multisig_op_account
 }
 
 pub struct SPLTestContext {

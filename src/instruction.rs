@@ -240,6 +240,24 @@ pub enum ProgramInstruction {
     /// 2. `[signer]` The rent collector account
     /// 3. `[]` The sysvar clock account
     FinalizeAddressBookUpdate { update: AddressBookUpdate },
+
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[]` The wallet account
+    /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 3. `[]` The sysvar clock account
+    InitBalanceAccountNameUpdate {
+        account_guid_hash: BalanceAccountGuidHash,
+        account_name_hash: BalanceAccountNameHash,
+    },
+
+    /// 0. `[writable]` The multisig operation account
+    /// 1. `[writable]` The wallet account
+    /// 2. `[signer]` The rent collector account
+    /// 3. `[]` The sysvar clock account
+    FinalizeBalanceAccountNameUpdate {
+        account_guid_hash: BalanceAccountGuidHash,
+        account_name_hash: BalanceAccountNameHash,
+    },
 }
 
 impl ProgramInstruction {
@@ -459,6 +477,22 @@ impl ProgramInstruction {
                 buf.push(23);
                 buf.extend_from_slice(&update_bytes);
             }
+            &ProgramInstruction::InitBalanceAccountNameUpdate {
+                ref account_guid_hash,
+                ref account_name_hash,
+            } => {
+                buf.push(24);
+                buf.extend_from_slice(account_guid_hash.to_bytes());
+                buf.extend_from_slice(account_name_hash.to_bytes());
+            }
+            &ProgramInstruction::FinalizeBalanceAccountNameUpdate {
+                ref account_guid_hash,
+                ref account_name_hash,
+            } => {
+                buf.push(25);
+                buf.extend_from_slice(account_guid_hash.to_bytes());
+                buf.extend_from_slice(account_name_hash.to_bytes());
+            }
         }
         buf
     }
@@ -492,6 +526,8 @@ impl ProgramInstruction {
             21 => Self::unpack_finalize_dapp_book_update_instruction(rest)?,
             22 => Self::unpack_init_address_book_update_instruction(rest)?,
             23 => Self::unpack_finalize_address_book_update_instruction(rest)?,
+            24 => Self::unpack_init_balance_account_name_update_instruction(rest)?,
+            25 => Self::unpack_finalize_balance_account_name_update_instruction(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -808,6 +844,32 @@ impl ProgramInstruction {
     ) -> Result<ProgramInstruction, ProgramError> {
         Ok(Self::FinalizeAddressBookUpdate {
             update: AddressBookUpdate::unpack(bytes)?,
+        })
+    }
+
+    fn unpack_init_balance_account_name_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::InitBalanceAccountNameUpdate {
+            account_guid_hash: unpack_account_guid_hash(bytes)?,
+            account_name_hash: unpack_account_name_hash(
+                bytes
+                    .get(32..)
+                    .ok_or(ProgramError::InvalidInstructionData)?,
+            )?,
+        })
+    }
+
+    fn unpack_finalize_balance_account_name_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::FinalizeBalanceAccountNameUpdate {
+            account_guid_hash: unpack_account_guid_hash(bytes)?,
+            account_name_hash: unpack_account_name_hash(
+                bytes
+                    .get(32..)
+                    .ok_or(ProgramError::InvalidInstructionData)?,
+            )?,
         })
     }
 }
@@ -1176,6 +1238,18 @@ fn unpack_account_guid_hash(bytes: &[u8]) -> Result<BalanceAccountGuidHash, Prog
                 .try_into()
                 .ok()
                 .map(|bytes| BalanceAccountGuidHash::new(bytes))
+        })
+        .ok_or(ProgramError::InvalidInstructionData)
+}
+
+fn unpack_account_name_hash(bytes: &[u8]) -> Result<BalanceAccountNameHash, ProgramError> {
+    bytes
+        .get(..32)
+        .and_then(|slice| {
+            slice
+                .try_into()
+                .ok()
+                .map(|bytes| BalanceAccountNameHash::new(bytes))
         })
         .ok_or(ProgramError::InvalidInstructionData)
 }

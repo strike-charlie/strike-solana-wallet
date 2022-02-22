@@ -10,7 +10,6 @@ deploy:
 clean:
 	rm -r target
 
-
 format:
 	cargo fmt
 

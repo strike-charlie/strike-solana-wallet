@@ -5,19 +5,19 @@ use solana_program::{system_program, sysvar};
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::time::Duration;
-use strike_wallet::instruction::{
-    AddressBookUpdate, BalanceAccountUpdate, BalanceAccountWhitelistUpdate, DAppBookUpdate,
-    ProgramInstruction, WalletConfigPolicyUpdate, WalletUpdate,
+use strike_wallet::{
+    instruction::{
+        AddressBookUpdate, BalanceAccountUpdate, BalanceAccountWhitelistUpdate, DAppBookUpdate,
+        ProgramInstruction, WalletConfigPolicyUpdate, WalletUpdate,
+    },
+    model::{
+        address_book::{AddressBookEntry, AddressBookEntryNameHash, DAppBookEntry},
+        balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash},
+        multisig_op::{ApprovalDisposition, BooleanSetting, SlotUpdateType, WrapDirection},
+        signer::Signer,
+    },
+    utils::SlotId,
 };
-use strike_wallet::model::address_book::{
-    AddressBookEntry, AddressBookEntryNameHash, DAppBookEntry,
-};
-use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
-use strike_wallet::model::multisig_op::{
-    ApprovalDisposition, BooleanSetting, SlotUpdateType, WrapDirection,
-};
-use strike_wallet::model::signer::Signer;
-use strike_wallet::utils::SlotId;
 
 pub fn init_wallet(
     program_id: &Pubkey,
@@ -753,6 +753,55 @@ pub fn finalize_account_settings_update(
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new(*wallet_account, false),
         AccountMeta::new(*rent_collector_account, true),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+    ];
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn init_balance_account_name_update(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    assistant_account: &Pubkey,
+    account_guid_hash: BalanceAccountGuidHash,
+    account_name_hash: BalanceAccountNameHash,
+) -> Instruction {
+    init_multisig_op(
+        program_id,
+        wallet_account,
+        multisig_op_account,
+        assistant_account,
+        ProgramInstruction::InitBalanceAccountNameUpdate {
+            account_guid_hash,
+            account_name_hash,
+        },
+    )
+}
+
+pub fn finalize_balance_account_name_update(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    account_guid_hash: BalanceAccountGuidHash,
+    account_name_hash: BalanceAccountNameHash,
+) -> Instruction {
+    let data = ProgramInstruction::FinalizeBalanceAccountNameUpdate {
+        account_guid_hash,
+        account_name_hash,
+    }
+    .borrow()
+    .pack();
+
+    let accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*wallet_account, false),
+        AccountMeta::new_readonly(*rent_collector_account, true),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
 
