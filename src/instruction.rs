@@ -228,6 +228,16 @@ pub enum ProgramInstruction {
     /// 2. `[signer]` The rent collector account
     /// 3. `[]` The sysvar clock account
     FinalizeDAppBookUpdate { update: DAppBookUpdate },
+
+    InitBalanceAccountNameHashUpdate {
+        account_guid_hash: BalanceAccountGuidHash,
+        account_name_hash: BalanceAccountNameHash,
+    },
+
+    FinalizeBalanceAccountNameHashUpdate {
+        account_guid_hash: BalanceAccountGuidHash,
+        account_name_hash: BalanceAccountNameHash,
+    },
 }
 
 impl ProgramInstruction {
@@ -435,6 +445,22 @@ impl ProgramInstruction {
                 update.pack(&mut update_bytes);
                 buf.extend_from_slice(&update_bytes);
             }
+            &ProgramInstruction::InitBalanceAccountNameHashUpdate {
+                ref account_guid_hash,
+                ref account_name_hash,
+            } => {
+                buf.push(22);
+                buf.extend_from_slice(account_guid_hash.to_bytes());
+                buf.extend_from_slice(account_name_hash.to_bytes());
+            }
+            &ProgramInstruction::FinalizeBalanceAccountNameHashUpdate {
+                ref account_guid_hash,
+                ref account_name_hash,
+            } => {
+                buf.push(23);
+                buf.extend_from_slice(account_guid_hash.to_bytes());
+                buf.extend_from_slice(account_name_hash.to_bytes());
+            }
         }
         buf
     }
@@ -466,6 +492,8 @@ impl ProgramInstruction {
             19 => Self::unpack_finalize_account_settings_update_instruction(rest)?,
             20 => Self::unpack_init_dapp_book_update_instruction(rest)?,
             21 => Self::unpack_finalize_dapp_book_update_instruction(rest)?,
+            22 => Self::unpack_init_balance_account_name_hash_update_instruction(rest)?,
+            23 => Self::unpack_finalize_balance_account_name_hash_update_instruction(rest)?,
             _ => return Err(ProgramError::InvalidInstructionData),
         })
     }
@@ -766,6 +794,32 @@ impl ProgramInstruction {
     ) -> Result<ProgramInstruction, ProgramError> {
         Ok(Self::FinalizeDAppBookUpdate {
             update: DAppBookUpdate::unpack(bytes)?,
+        })
+    }
+
+    fn unpack_init_balance_account_name_hash_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::InitBalanceAccountNameHashUpdate {
+            account_guid_hash: unpack_account_guid_hash(bytes)?,
+            account_name_hash: unpack_account_name_hash(
+                bytes
+                    .get(32..)
+                    .ok_or(ProgramError::InvalidInstructionData)?,
+            )?,
+        })
+    }
+
+    fn unpack_finalize_balance_account_name_hash_update_instruction(
+        bytes: &[u8],
+    ) -> Result<ProgramInstruction, ProgramError> {
+        Ok(Self::FinalizeBalanceAccountNameHashUpdate {
+            account_guid_hash: unpack_account_guid_hash(bytes)?,
+            account_name_hash: unpack_account_name_hash(
+                bytes
+                    .get(32..)
+                    .ok_or(ProgramError::InvalidInstructionData)?,
+            )?,
         })
     }
 }
@@ -1078,6 +1132,18 @@ fn unpack_account_guid_hash(bytes: &[u8]) -> Result<BalanceAccountGuidHash, Prog
                 .try_into()
                 .ok()
                 .map(|bytes| BalanceAccountGuidHash::new(bytes))
+        })
+        .ok_or(ProgramError::InvalidInstructionData)
+}
+
+fn unpack_account_name_hash(bytes: &[u8]) -> Result<BalanceAccountNameHash, ProgramError> {
+    bytes
+        .get(..32)
+        .and_then(|slice| {
+            slice
+                .try_into()
+                .ok()
+                .map(|bytes| BalanceAccountNameHash::new(bytes))
         })
         .ok_or(ProgramError::InvalidInstructionData)
 }

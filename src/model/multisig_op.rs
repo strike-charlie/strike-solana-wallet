@@ -4,7 +4,7 @@ use crate::instruction::{
     WalletUpdate,
 };
 use crate::model::address_book::DAppBookEntry;
-use crate::model::balance_account::BalanceAccountGuidHash;
+use crate::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
 use crate::model::signer::Signer;
 use crate::model::wallet::Wallet;
 use crate::utils::{pack_option, SlotId};
@@ -452,6 +452,11 @@ pub enum MultisigOpParams {
         account_guid_hash: BalanceAccountGuidHash,
         update: BalanceAccountUpdate,
     },
+    UpdateBalanceAccountNameHash {
+        wallet_address: Pubkey,
+        account_guid_hash: BalanceAccountGuidHash,
+        account_name_hash: BalanceAccountNameHash,
+    },
     Transfer {
         wallet_address: Pubkey,
         account_guid_hash: BalanceAccountGuidHash,
@@ -677,6 +682,19 @@ impl MultisigOpParams {
                 bytes[1..1 + PUBKEY_BYTES].copy_from_slice(&wallet_address.to_bytes());
                 bytes[1 + PUBKEY_BYTES..1 + PUBKEY_BYTES + update_bytes.len()]
                     .copy_from_slice(&update_bytes);
+                hash(&bytes)
+            }
+            MultisigOpParams::UpdateBalanceAccountNameHash {
+                wallet_address,
+                account_guid_hash,
+                account_name_hash,
+            } => {
+                let mut bytes: Vec<u8> = Vec::new();
+                bytes.resize(97, 0);
+                bytes[0] = 10; // type code
+                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
+                bytes[33..65].copy_from_slice(account_guid_hash.to_bytes());
+                bytes[65..97].copy_from_slice(account_name_hash.to_bytes());
                 hash(&bytes)
             }
         }

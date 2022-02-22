@@ -373,6 +373,17 @@ impl Wallet {
         Ok(())
     }
 
+    pub fn update_balance_account_name_hash(
+        &mut self,
+        account_guid_hash: &BalanceAccountGuidHash,
+        account_name_hash: &BalanceAccountNameHash,
+    ) -> ProgramResult {
+        let balance_account_idx = self.get_balance_account_index(account_guid_hash)?;
+        let balance_account = &mut self.balance_accounts[balance_account_idx].borrow_mut();
+        balance_account.name_hash = account_name_hash.clone();
+        Ok(())
+    }
+
     pub fn update_balance_account(
         &mut self,
         account_guid_hash: &BalanceAccountGuidHash,

@@ -1,7 +1,8 @@
 use crate::handlers::{
-    account_settings_update_handler, approval_disposition_handler,
-    balance_account_creation_handler, balance_account_update_handler, dapp_book_update_handler,
-    dapp_transaction_handler, init_wallet_handler, transfer_handler, update_signer_handler,
+    approval_disposition_handler, balance_account_creation_handler,
+    balance_account_name_hash_update_handler, balance_account_settings_update_handler,
+    balance_account_update_handler, dapp_book_update_handler, dapp_transaction_handler,
+    init_wallet_handler, transfer_handler, update_signer_handler,
     wallet_config_policy_update_handler, wallet_update_handler, wrap_unwrap_handler,
 };
 use crate::instruction::ProgramInstruction;
@@ -76,6 +77,26 @@ impl Processor {
                 accounts,
                 &account_guid_hash,
                 &update,
+            ),
+
+            ProgramInstruction::InitBalanceAccountNameHashUpdate {
+                account_guid_hash,
+                account_name_hash,
+            } => balance_account_name_hash_update_handler::init(
+                program_id,
+                accounts,
+                &account_guid_hash,
+                &account_name_hash,
+            ),
+
+            ProgramInstruction::FinalizeBalanceAccountNameHashUpdate {
+                account_guid_hash,
+                account_name_hash,
+            } => balance_account_name_hash_update_handler::finalize(
+                program_id,
+                accounts,
+                &account_guid_hash,
+                &account_name_hash,
             ),
 
             ProgramInstruction::InitTransfer {
@@ -188,7 +209,7 @@ impl Processor {
                 account_guid_hash,
                 whitelist_enabled,
                 dapps_enabled,
-            } => account_settings_update_handler::init(
+            } => balance_account_settings_update_handler::init(
                 program_id,
                 &accounts,
                 &account_guid_hash,
@@ -200,7 +221,7 @@ impl Processor {
                 account_guid_hash,
                 whitelist_enabled,
                 dapps_enabled,
-            } => account_settings_update_handler::finalize(
+            } => balance_account_settings_update_handler::finalize(
                 program_id,
                 &accounts,
                 &account_guid_hash,
