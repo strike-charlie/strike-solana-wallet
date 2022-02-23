@@ -52,8 +52,3 @@ $ make test
 ```bash
 $ make analyze
 ```
-
-
-# Getting Help
-
-Join us on our [Discord server](https://discord.gg/aVBUCmNU)
