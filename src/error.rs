@@ -81,14 +81,29 @@ pub enum WalletError {
     /// DApp transactions are disabled.
     #[error("DApp Transactions Are Disabled")]
     DAppsDisabled,
-    /// Slot Already In Use
-    #[error("Slot Already In Use")]
-    SlotAlreadyInUse,
+    /// Destination Already In Use
+    #[error("Destination Already In Use")]
+    DestinationInUse,
     /// Unknown Signer
     #[error("Unknown Signer")]
     UnknownSigner,
+    /// DApp Not Allowed
     #[error("DApp Not Allowed")]
     DAppNotAllowed,
+
+    // 25
+    /// Slot Cannot Be Inserted
+    #[error("Slot Cannot Be Inserted")]
+    SlotCannotBeInserted,
+    /// Slot Cannot Be Removed
+    #[error("Slot Cannot Be Removed")]
+    SlotCannotBeRemoved,
+    /// Signer Is A Config Approver
+    #[error("Signer Is A Config Approver")]
+    SignerIsConfigApprover,
+    /// Signer Is A Transfer Approver
+    #[error("Signer Is A Transfer Approver")]
+    SignerIsTransferApprover,
 }
 
 impl From<WalletError> for ProgramError {

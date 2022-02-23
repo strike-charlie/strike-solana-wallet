@@ -431,8 +431,8 @@ impl Wallet {
 
     fn add_signers(&mut self, signers_to_add: &Vec<(SlotId<Signer>, Signer)>) -> ProgramResult {
         if !self.signers.can_be_inserted(signers_to_add) {
-            msg!("Failed to add signers: at least one of the provided slots is already taken");
-            return Err(WalletError::SlotAlreadyInUse.into());
+            msg!("Failed to add signers: at least one slot cannot be inserted");
+            return Err(WalletError::SlotCannotBeInserted.into());
         }
         self.signers.insert_many(signers_to_add);
         Ok(())
@@ -444,18 +444,18 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.signers.can_be_removed(signers_to_remove) {
             msg!("Failed to remove signers: at least one of the provided signers is not present in the config");
-            return Err(WalletError::UnknownSigner.into());
+            return Err(WalletError::SlotCannotBeRemoved.into());
         }
         let slot_ids = signers_to_remove.slot_ids();
 
         if self.config_approvers.any_enabled(&slot_ids) {
             msg!("Failed to remove signers: not allowed to remove a config approving signer");
-            return Err(WalletError::InvalidSlot.into());
+            return Err(WalletError::SignerIsConfigApprover.into());
         };
         for balance_account in &self.balance_accounts {
             if balance_account.transfer_approvers.any_enabled(&slot_ids) {
                 msg!("Failed to remove signers: not allowed to remove a transfer approving signer");
-                return Err(WalletError::InvalidSlot.into());
+                return Err(WalletError::SignerIsTransferApprover.into());
             }
         }
         self.signers.remove_many(signers_to_remove);
@@ -468,7 +468,7 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.address_book.can_be_inserted(entries_to_add) {
             msg!("Failed to add address book entries: at least one of the provided slots is already taken");
-            return Err(WalletError::InvalidSlot.into());
+            return Err(WalletError::SlotCannotBeInserted.into());
         }
         self.address_book.insert_many(entries_to_add);
         Ok(())
@@ -480,13 +480,13 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.address_book.can_be_removed(entries_to_remove) {
             msg!("Failed to remove address book entries: at least one of the provided entries is not present in the config");
-            return Err(WalletError::InvalidSlot.into());
+            return Err(WalletError::SlotCannotBeRemoved.into());
         }
         let slot_ids = entries_to_remove.slot_ids();
         for balance_account in &self.balance_accounts {
             if balance_account.allowed_destinations.any_enabled(&slot_ids) {
                 msg!("Failed to remove address book entries: at least one address is currently in use");
-                return Err(WalletError::SlotAlreadyInUse.into());
+                return Err(WalletError::DestinationInUse.into());
             }
         }
         self.address_book.remove_many(entries_to_remove);
@@ -498,8 +498,8 @@ impl Wallet {
         entries_to_add: &Vec<(SlotId<DAppBookEntry>, DAppBookEntry)>,
     ) -> ProgramResult {
         if !self.dapp_book.can_be_inserted(entries_to_add) {
-            msg!("Failed to add dapp book entries: at least one of the provided slots is already taken");
-            return Err(WalletError::SlotAlreadyInUse.into());
+            msg!("Failed to add dapp book entries: at least one slot cannot be inserted");
+            return Err(WalletError::SlotCannotBeInserted.into());
         }
         self.dapp_book.insert_many(entries_to_add);
         Ok(())
@@ -511,7 +511,7 @@ impl Wallet {
     ) -> ProgramResult {
         if !self.dapp_book.can_be_removed(entries_to_remove) {
             msg!("Failed to remove dapp book entries: at least one of the provided entries is not present in the config");
-            return Err(WalletError::InvalidSlot.into());
+            return Err(WalletError::SlotCannotBeRemoved.into());
         }
         self.dapp_book.remove_many(entries_to_remove);
         Ok(())

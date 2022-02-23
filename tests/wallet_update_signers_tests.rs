@@ -71,7 +71,7 @@ async fn test_add_and_remove_signer_init_failures() {
         1,
         signer_to_add_and_remove,
         None,
-        Some(Custom(WalletError::SlotAlreadyInUse as u32)),
+        Some(Custom(WalletError::SlotCannotBeInserted as u32)),
     )
     .await;
 
@@ -82,7 +82,7 @@ async fn test_add_and_remove_signer_init_failures() {
         1,
         signer_to_add_and_remove,
         None,
-        Some(Custom(WalletError::UnknownSigner as u32)),
+        Some(Custom(WalletError::SlotCannotBeRemoved as u32)),
     )
     .await;
 
@@ -94,7 +94,7 @@ async fn test_add_and_remove_signer_init_failures() {
         1,
         signer_to_add_and_remove,
         None,
-        Some(Custom(WalletError::InvalidSlot as u32)),
+        Some(Custom(WalletError::SignerIsConfigApprover as u32)),
     )
     .await;
 }
@@ -133,7 +133,7 @@ async fn test_remove_signer_fails_for_a_transfer_approver() {
             SlotId::new(2),
             context.approvers[2].pubkey_as_signer(),
         ),
-        Custom(WalletError::InvalidSlot as u32),
+        Custom(WalletError::SignerIsTransferApprover as u32),
     )
     .await;
 }

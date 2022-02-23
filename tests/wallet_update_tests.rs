@@ -329,7 +329,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 Vec::new(),
             ),
-            Custom(WalletError::SlotAlreadyInUse as u32),
+            Custom(WalletError::SlotCannotBeInserted as u32),
         )
         .await;
     }
@@ -356,7 +356,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 Vec::new(),
             ),
-            Custom(WalletError::UnknownSigner as u32),
+            Custom(WalletError::SlotCannotBeRemoved as u32),
         )
         .await;
     }
@@ -383,7 +383,7 @@ async fn invalid_wallet_updates() {
                 vec![(SlotId::new(0), new_address_book_entry)],
                 Vec::new(),
             ),
-            Custom(WalletError::InvalidSlot as u32),
+            Custom(WalletError::SlotCannotBeInserted as u32),
         )
         .await;
     }
@@ -410,7 +410,7 @@ async fn invalid_wallet_updates() {
                 Vec::new(),
                 vec![(SlotId::new(0), new_address_book_entry)],
             ),
-            Custom(WalletError::InvalidSlot as u32),
+            Custom(WalletError::SlotCannotBeRemoved as u32),
         )
         .await;
     }
