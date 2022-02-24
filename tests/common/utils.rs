@@ -1617,8 +1617,9 @@ pub async fn modify_address_book_and_whitelist(
 
 pub async fn update_balance_account_name_hash(
     context: &mut BalanceAccountTestContext,
-    new_account_name_hash: &BalanceAccountNameHash,
-) -> Keypair {
+    account_name_hash: BalanceAccountNameHash,
+    expected_error: Option<InstructionError>,
+) -> Option<Keypair> {
     let rent = context.banks_client.get_rent().await.unwrap();
     let multisig_op_rent = rent.minimum_balance(MultisigOp::LEN);
     let multisig_op_account = Keypair::new();
@@ -1638,7 +1639,7 @@ pub async fn update_balance_account_name_hash(
                 &multisig_op_account.pubkey(),
                 &context.assistant_account.pubkey(),
                 context.balance_account_guid_hash,
-                *new_account_name_hash,
+                account_name_hash,
             ),
         ],
         Some(&context.payer.pubkey()),
@@ -1650,11 +1651,25 @@ pub async fn update_balance_account_name_hash(
         context.recent_blockhash,
     );
 
-    context
-        .banks_client
-        .process_transaction(init_update_tx)
-        .await
-        .unwrap();
+    match expected_error {
+        None => context
+            .banks_client
+            .process_transaction(init_update_tx)
+            .await
+            .unwrap(),
+        Some(error) => {
+            assert_eq!(
+                context
+                    .banks_client
+                    .process_transaction(init_update_tx)
+                    .await
+                    .unwrap_err()
+                    .unwrap(),
+                TransactionError::InstructionError(1, error),
+            );
+            return None;
+        }
+    }
 
     approve_or_deny_n_of_n_multisig_op(
         context.banks_client.borrow_mut(),
@@ -1676,7 +1691,7 @@ pub async fn update_balance_account_name_hash(
             &multisig_op_account.pubkey(),
             &context.payer.pubkey(),
             context.balance_account_guid_hash,
-            *new_account_name_hash,
+            account_name_hash,
         )],
         Some(&context.payer.pubkey()),
         &[&context.payer],
@@ -1688,7 +1703,7 @@ pub async fn update_balance_account_name_hash(
         .await
         .unwrap();
 
-    multisig_op_account
+    Some(multisig_op_account)
 }
 
 pub struct SPLTestContext {

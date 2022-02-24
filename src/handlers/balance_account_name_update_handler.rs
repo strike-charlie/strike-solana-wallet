@@ -22,8 +22,10 @@ pub fn init(
     let initiator_account_info = next_account_info(accounts_iter)?;
     let clock = get_clock_from_next_account(accounts_iter)?;
 
-    let wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
+    let wallet: Wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
 
+    // ensure GUID references valid account for this wallet
+    wallet.get_balance_account(account_guid_hash)?;
     wallet.validate_config_initiator(initiator_account_info)?;
 
     start_multisig_config_op(

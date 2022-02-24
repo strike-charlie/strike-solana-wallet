@@ -140,7 +140,6 @@ impl Wallet {
         get_approvers: F,
     ) -> ProgramResult {
         if !initiator.is_signer {
-            println!("MULTISIG OP INITIATOR {} NOT A SIGNER", initiator.key);
             return Err(WalletError::InvalidSignature.into());
         }
         if initiator.key == &self.assistant.key || get_approvers().contains(initiator.key) {

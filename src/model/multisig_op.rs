@@ -256,7 +256,6 @@ impl MultisigOp {
         }
 
         if !approver.is_signer {
-            println!("APPROVER {} NOT A SIGNER", approver.key);
             return Err(WalletError::InvalidSignature.into());
         }
 
@@ -634,13 +633,12 @@ impl MultisigOpParams {
                 slot_id,
                 signer,
             } => {
-                let mut bytes: Vec<u8> = Vec::new();
-                bytes.resize(1 + 2 + PUBKEY_BYTES * 2, 0);
-                bytes[0] = 5; // type code
-                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
-                bytes[33] = slot_update_type.to_u8();
-                bytes[34] = slot_id.value as u8;
-                bytes[35..67].copy_from_slice(signer.key.as_ref());
+                let mut bytes: Vec<u8> = Vec::with_capacity(1 + 2 + PUBKEY_BYTES * 2);
+                bytes.push(5); // type code
+                bytes.extend_from_slice(&wallet_address.to_bytes());
+                bytes.push(slot_update_type.to_u8());
+                bytes.push(slot_id.value as u8);
+                bytes.extend_from_slice(signer.key.as_ref());
                 hash(&bytes)
             }
             MultisigOpParams::DAppTransaction {
@@ -706,12 +704,11 @@ impl MultisigOpParams {
                 account_guid_hash,
                 account_name_hash,
             } => {
-                let mut bytes: Vec<u8> = Vec::new();
-                bytes.resize(97, 0);
-                bytes[0] = 10; // type code
-                bytes[1..33].copy_from_slice(&wallet_address.to_bytes());
-                bytes[33..65].copy_from_slice(account_guid_hash.to_bytes());
-                bytes[65..97].copy_from_slice(account_name_hash.to_bytes());
+                let mut bytes: Vec<u8> = Vec::with_capacity(79);
+                bytes.push(10); // type code
+                bytes.extend_from_slice(&wallet_address.to_bytes());
+                bytes.extend_from_slice(account_guid_hash.to_bytes());
+                bytes.extend_from_slice(account_name_hash.to_bytes());
                 hash(&bytes)
             }
         }
