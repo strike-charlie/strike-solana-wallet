@@ -705,7 +705,7 @@ impl MultisigOpParams {
                 account_name_hash,
             } => {
                 let mut bytes: Vec<u8> = Vec::with_capacity(1 + PUBKEY_BYTES + 32 + 32);
-                bytes.push(10); // type code
+                bytes.push(11); // type code
                 bytes.extend_from_slice(&wallet_address.to_bytes());
                 bytes.extend_from_slice(account_guid_hash.to_bytes());
                 bytes.extend_from_slice(account_name_hash.to_bytes());
