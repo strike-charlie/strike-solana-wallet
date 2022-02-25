@@ -651,10 +651,10 @@ impl MultisigOpParams {
                 bytes.push(7);
                 bytes.extend_from_slice(&wallet_address.to_bytes());
                 bytes.extend_from_slice(&account_guid_hash.to_bytes());
-                bytes.put_u16_le(instructions.len().as_u16());
                 let mut buf = vec![0; DAppBookEntry::LEN];
                 dapp.pack_into_slice(buf.as_mut_slice());
                 bytes.extend_from_slice(&buf[..]);
+                bytes.put_u16_le(instructions.len().as_u16());
                 for instruction in instructions.into_iter() {
                     append_instruction(instruction, &mut bytes);
                 }
