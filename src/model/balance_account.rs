@@ -5,6 +5,7 @@ use crate::utils::SlotFlags;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{Pack, Sealed};
+use std::convert::TryFrom;
 use std::time::Duration;
 
 pub type AllowedDestinations = SlotFlags<AddressBookEntry, { AddressBook::FLAGS_STORAGE_SIZE }>;
@@ -41,8 +42,8 @@ impl BalanceAccountNameHash {
         Self::new(&[0; 32])
     }
 
-    pub fn to_bytes(&self) -> &[u8] {
-        &self.0[..]
+    pub fn to_bytes(&self) -> &[u8; 32] {
+        <&[u8; 32]>::try_from(&self.0[..]).unwrap()
     }
 }
 

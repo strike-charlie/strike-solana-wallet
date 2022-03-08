@@ -1,6 +1,6 @@
 use crate::error::WalletError;
 use crate::instruction::{
-    AddressBookUpdate, BalanceAccountPolicyUpdate, BalanceAccountUpdate, DAppBookUpdate,
+    AddressBookUpdate, BalanceAccountCreation, BalanceAccountPolicyUpdate, BalanceAccountUpdate, DAppBookUpdate,
     InitialWalletConfig, WalletConfigPolicyUpdate,
 };
 use crate::model::address_book::{
@@ -130,6 +130,15 @@ impl Wallet {
                 Wallet::MAX_APPROVAL_TIMEOUT.as_secs(),
             );
             return Err(WalletError::InvalidApprovalTimeout.into());
+        }
+
+        Ok(())
+    }
+
+    pub fn validate_approvals_required(approvals_required: u8) -> ProgramResult {
+        if approvals_required == 0 {
+            msg!("Approvals required can't be 0");
+            return Err(WalletError::InvalidApproverCount.into());
         }
 
         Ok(())
@@ -314,33 +323,63 @@ impl Wallet {
         self.dapp_book.find_id(&dapp).is_some()
     }
 
-    pub fn validate_add_balance_account(
+    pub fn validate_balance_account_creation(
         &self,
         account_guid_hash: &BalanceAccountGuidHash,
-        update: &BalanceAccountUpdate,
+        creation_params: &BalanceAccountCreation,
+        program_id: &Pubkey,
     ) -> ProgramResult {
         let mut self_clone = self.clone();
-        self_clone.add_balance_account(account_guid_hash, update)
+        self_clone.create_balance_account(account_guid_hash, creation_params, program_id)
     }
 
-    pub fn add_balance_account(
+    pub fn create_balance_account(
         &mut self,
         account_guid_hash: &BalanceAccountGuidHash,
-        update: &BalanceAccountUpdate,
+        creation_params: &BalanceAccountCreation,
+        program_id: &Pubkey,
     ) -> ProgramResult {
+        Wallet::validate_approvals_required(creation_params.approvals_required_for_transfer)?;
+        Wallet::validate_approval_timeout(&creation_params.approval_timeout_for_transfer)?;
+        if creation_params.approvals_required_for_transfer
+            > creation_params.transfer_approvers.len() as u8
+        {
+            msg!(
+                "Approvals required for transfer {} can't exceed configured approvers count {}",
+                creation_params.approvals_required_for_transfer,
+                creation_params.transfer_approvers.len()
+            );
+            return Err(WalletError::InvalidApproverCount.into());
+        }
+
         let balance_account = BalanceAccount {
             guid_hash: *account_guid_hash,
-            name_hash: BalanceAccountNameHash::zero(),
-            approvals_required_for_transfer: 0,
-            approval_timeout_for_transfer: Duration::from_secs(0),
+            name_hash: creation_params.name_hash,
+            approvals_required_for_transfer: creation_params.approvals_required_for_transfer,
+            approval_timeout_for_transfer: creation_params.approval_timeout_for_transfer,
             transfer_approvers: Approvers::zero(),
             allowed_destinations: AllowedDestinations::zero(),
-            whitelist_enabled: BooleanSetting::Off,
-            dapps_enabled: BooleanSetting::Off,
+            policy_update_locked: false,
+            whitelist_enabled: creation_params.whitelist_enabled,
+            dapps_enabled: creation_params.dapps_enabled,
             policy_update_locked: false,
         };
+
         self.balance_accounts.push(balance_account);
-        self.update_balance_account(account_guid_hash, update)
+        let balance_account_idx = self.get_balance_account_index(account_guid_hash)?;
+        self.enable_transfer_approvers(balance_account_idx, &creation_params.transfer_approvers)?;
+
+        let (source_account_pda, _) =
+            Pubkey::find_program_address(&[&account_guid_hash.to_bytes()], program_id);
+
+        self.add_address_book_entries(&vec![(
+            creation_params.address_book_slot_id,
+            AddressBookEntry {
+                address: source_account_pda,
+                name_hash: AddressBookEntryNameHash::new(creation_params.name_hash.to_bytes()),
+            },
+        )])?;
+        Ok(())
     }
 
     pub fn validate_balance_account_policy_update(
@@ -444,10 +483,7 @@ impl Wallet {
             return Err(WalletError::InvalidApproverCount.into());
         }
 
-        if balance_account.approvals_required_for_transfer == 0 {
-            msg!("Approvals required for transfer can't be 0");
-            return Err(WalletError::InvalidApproverCount.into());
-        }
+        Wallet::validate_approvals_required(balance_account.approvals_required_for_transfer)?;
 
         if balance_account.transfer_approvers.count_enabled() == 0 {
             msg!("At least one transfer approver has to be configured");

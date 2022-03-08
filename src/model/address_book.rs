@@ -4,6 +4,7 @@ use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{Pack, Sealed};
 use solana_program::pubkey::Pubkey;
+use std::convert::TryFrom;
 
 pub type AddressBook = Slots<AddressBookEntry, { Wallet::MAX_ADDRESS_BOOK_ENTRIES }>;
 pub type DAppBook = Slots<DAppBookEntry, { Wallet::MAX_DAPP_BOOK_ENTRIES }>;
@@ -20,8 +21,8 @@ impl AddressBookEntryNameHash {
         Self::new(&[0; 32])
     }
 
-    pub fn to_bytes(&self) -> &[u8] {
-        &self.0[..]
+    pub fn to_bytes(&self) -> &[u8; 32] {
+        <&[u8; 32]>::try_from(&self.0[..]).unwrap()
     }
 }
 
@@ -41,7 +42,7 @@ impl Pack for AddressBookEntry {
         let (address_dst, name_hash_dst) = mut_array_refs![dst, 32, 32];
 
         address_dst.copy_from_slice(self.address.as_ref());
-        name_hash_dst.copy_from_slice(&self.name_hash.to_bytes());
+        name_hash_dst.copy_from_slice(self.name_hash.to_bytes());
     }
 
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {

@@ -6,7 +6,7 @@ use solana_program::{system_program, sysvar};
 use std::borrow::Borrow;
 use std::collections::BTreeMap;
 use std::time::Duration;
-use strike_wallet::instruction::BalanceAccountPolicyUpdate;
+use strike_wallet::instruction::{BalanceAccountCreation, BalanceAccountPolicyUpdate};
 use strike_wallet::{
     instruction::{
         AddressBookUpdate, BalanceAccountUpdate, BalanceAccountWhitelistUpdate, DAppBookUpdate,
@@ -97,7 +97,9 @@ pub fn init_balance_account_creation(
     approvals_required_for_transfer: u8,
     approval_timeout_for_transfer: Duration,
     approvers: Vec<(SlotId<Signer>, Signer)>,
-    allowed_destinations: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    whitelist_enabled: BooleanSetting,
+    dapps_enabled: BooleanSetting,
+    address_book_slot_id: SlotId<AddressBookEntry>,
 ) -> Instruction {
     init_multisig_op(
         program_id,
@@ -106,14 +108,14 @@ pub fn init_balance_account_creation(
         assistant_account,
         ProgramInstruction::InitBalanceAccountCreation {
             account_guid_hash,
-            update: BalanceAccountUpdate {
+            creation_params: BalanceAccountCreation {
                 name_hash,
                 approvals_required_for_transfer,
                 approval_timeout_for_transfer,
-                add_transfer_approvers: approvers.clone(),
-                remove_transfer_approvers: vec![],
-                add_allowed_destinations: allowed_destinations,
-                remove_allowed_destinations: vec![],
+                transfer_approvers: approvers.clone(),
+                whitelist_enabled,
+                dapps_enabled,
+                address_book_slot_id,
             },
         },
     )
@@ -125,11 +127,11 @@ pub fn finalize_balance_account_creation(
     multisig_op_account: &Pubkey,
     rent_collector_account: &Pubkey,
     account_guid_hash: BalanceAccountGuidHash,
-    update: BalanceAccountUpdate,
+    creation_params: BalanceAccountCreation,
 ) -> Instruction {
     let data = ProgramInstruction::FinalizeBalanceAccountCreation {
         account_guid_hash,
-        update,
+        creation_params,
     }
     .borrow()
     .pack();

@@ -1,6 +1,6 @@
 use crate::error::WalletError;
 use crate::instruction::{
-    append_instruction, AddressBookUpdate, BalanceAccountPolicyUpdate, BalanceAccountUpdate,
+    append_instruction, AddressBookUpdate, BalanceAccountCreation, BalanceAccountPolicyUpdate, BalanceAccountUpdate,
     DAppBookUpdate, WalletConfigPolicyUpdate,
 };
 use crate::model::address_book::DAppBookEntry;
@@ -439,6 +439,24 @@ impl Pack for MultisigOp {
 // represents multisig operation params that are hashed and signed by the client
 #[derive(Debug, PartialEq, Clone)]
 pub enum MultisigOpParams {
+<<<<<<< HEAD
+=======
+    CreateBalanceAccount {
+        wallet_address: Pubkey,
+        account_guid_hash: BalanceAccountGuidHash,
+        creation_params: BalanceAccountCreation,
+    },
+    UpdateBalanceAccount {
+        wallet_address: Pubkey,
+        account_guid_hash: BalanceAccountGuidHash,
+        update: BalanceAccountUpdate,
+    },
+    UpdateBalanceAccountName {
+        wallet_address: Pubkey,
+        account_guid_hash: BalanceAccountGuidHash,
+        account_name_hash: BalanceAccountNameHash,
+    },
+>>>>>>> 50f79a7... balance account creation changes for new approval type
     Transfer {
         wallet_address: Pubkey,
         account_guid_hash: BalanceAccountGuidHash,
@@ -531,6 +549,37 @@ impl MultisigOpParams {
 
     pub fn hash(&self) -> Hash {
         match self {
+<<<<<<< HEAD
+=======
+            MultisigOpParams::CreateBalanceAccount {
+                wallet_address,
+                account_guid_hash,
+                creation_params,
+            } => {
+                let mut update_bytes: Vec<u8> = Vec::new();
+                creation_params.pack(&mut update_bytes);
+                Self::hash_balance_account_update_op(
+                    1,
+                    wallet_address,
+                    account_guid_hash,
+                    update_bytes,
+                )
+            }
+            MultisigOpParams::UpdateBalanceAccount {
+                wallet_address,
+                account_guid_hash,
+                update,
+            } => {
+                let mut update_bytes: Vec<u8> = Vec::new();
+                update.pack(&mut update_bytes);
+                Self::hash_balance_account_update_op(
+                    2,
+                    wallet_address,
+                    account_guid_hash,
+                    update_bytes,
+                )
+            }
+>>>>>>> 50f79a7... balance account creation changes for new approval type
             MultisigOpParams::Transfer {
                 wallet_address,
                 account_guid_hash,

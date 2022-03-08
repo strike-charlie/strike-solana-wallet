@@ -9,13 +9,11 @@ use solana_program::instruction::InstructionError::Custom;
 use solana_program_test::tokio;
 use solana_sdk::signer::Signer;
 use strike_wallet::error::WalletError;
-use strike_wallet::model::address_book::AddressBookEntry;
 use strike_wallet::model::multisig_op::BooleanSetting;
-use strike_wallet::utils::SlotId;
 
 #[tokio::test]
 async fn test_address_book_update() {
-    let (mut context, _) = setup_balance_account_tests_and_finalize(Some(28000)).await;
+    let (mut context, _) = setup_balance_account_tests_and_finalize(Some(30000)).await;
 
     let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
 
@@ -51,7 +49,11 @@ async fn test_address_book_update() {
     verify_address_book(
         &mut context,
         initial_entries.clone(),
-        vec![initial_entries[0].1, initial_entries[1].1],
+        vec![
+            initial_entries[0].1,
+            initial_entries[1].1,
+            initial_entries[2].1,
+        ],
     )
     .await;
 
@@ -178,24 +180,4 @@ async fn test_address_book_failures() {
         Some(Custom(WalletError::InvalidSlot as u32)),
     )
     .await;
-}
-
-async fn verify_address_book(
-    context: &mut BalanceAccountTestContext,
-    address_book_entries: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
-    whitelist_entries: Vec<AddressBookEntry>,
-) {
-    let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
-    assert_eq!(
-        wallet.address_book.filled_slots().len(),
-        address_book_entries.len()
-    );
-    assert_eq!(wallet.address_book.filled_slots(), address_book_entries);
-    let balance_account = wallet
-        .get_balance_account(&context.balance_account_guid_hash)
-        .unwrap();
-    assert_eq!(
-        whitelist_entries.to_set(),
-        wallet.get_allowed_destinations(balance_account).to_set()
-    );
 }

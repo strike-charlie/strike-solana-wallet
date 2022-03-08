@@ -24,7 +24,7 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strike_wallet::instruction::{
-    AddressBookUpdate, BalanceAccountPolicyUpdate, BalanceAccountUpdate,
+    AddressBookUpdate, BalanceAccountPolicyUpdate, BalanceAccountCreation,
     BalanceAccountWhitelistUpdate, DAppBookUpdate, InitialWalletConfig, WalletConfigPolicyUpdate,
 };
 use strike_wallet::model::address_book::{
@@ -961,9 +961,10 @@ pub struct BalanceAccountTestContext {
     pub assistant_account: Keypair,
     pub approvers: Vec<Keypair>,
     pub recent_blockhash: Hash,
-    pub expected_update: BalanceAccountUpdate,
+    pub expected_creation_params: BalanceAccountCreation,
     pub balance_account_name_hash: BalanceAccountNameHash,
     pub balance_account_guid_hash: BalanceAccountGuidHash,
+    pub balance_account_address_book_entry: (SlotId<AddressBookEntry>, AddressBookEntry),
     pub destination_name_hash: AddressBookEntryNameHash,
     pub allowed_destination: AddressBookEntry,
     pub destination: Keypair,
@@ -1049,6 +1050,10 @@ pub async fn setup_balance_account_tests(
         transfer_approvers.append(&mut vec![(SlotId::new(2), approvers[2].pubkey_as_signer())])
     }
 
+    let slot_for_balance_account_address = SlotId::new(32);
+    let (source_account_pda, _) =
+        Pubkey::find_program_address(&[&balance_account_guid_hash.to_bytes()], &program_id);
+
     let init_transaction = Transaction::new_signed_with_payer(
         &[
             system_instruction::create_account(
@@ -1068,7 +1073,9 @@ pub async fn setup_balance_account_tests(
                 2,
                 approval_timeout_for_transfer,
                 transfer_approvers.clone(),
-                vec![],
+                BooleanSetting::Off,
+                BooleanSetting::Off,
+                slot_for_balance_account_address,
             ),
         ],
         Some(&payer.pubkey()),
@@ -1106,14 +1113,14 @@ pub async fn setup_balance_account_tests(
     );
     assert_eq!(multisig_op.dispositions_required, 1);
 
-    let expected_update = BalanceAccountUpdate {
+    let expected_creation_params = BalanceAccountCreation {
         name_hash: balance_account_name_hash,
         approvals_required_for_transfer: 2,
         approval_timeout_for_transfer,
-        add_transfer_approvers: transfer_approvers.clone(),
-        remove_transfer_approvers: vec![],
-        add_allowed_destinations: vec![],
-        remove_allowed_destinations: vec![],
+        transfer_approvers: transfer_approvers.clone(),
+        whitelist_enabled: BooleanSetting::Off,
+        dapps_enabled: BooleanSetting::Off,
+        address_book_slot_id: SlotId::new(32),
     };
 
     assert_eq!(
@@ -1121,7 +1128,7 @@ pub async fn setup_balance_account_tests(
         MultisigOpParams::CreateBalanceAccount {
             wallet_address: wallet_account.pubkey(),
             account_guid_hash: balance_account_guid_hash,
-            update: expected_update.clone(),
+            creation_params: expected_creation_params.clone(),
         }
         .hash()
     );
@@ -1136,9 +1143,16 @@ pub async fn setup_balance_account_tests(
         assistant_account,
         approvers,
         recent_blockhash,
-        expected_update,
+        expected_creation_params,
         balance_account_name_hash,
         balance_account_guid_hash,
+        balance_account_address_book_entry: (
+            slot_for_balance_account_address,
+            AddressBookEntry {
+                address: source_account_pda,
+                name_hash: AddressBookEntryNameHash::new(&hash_of(b"Account Name")),
+            },
+        ),
         destination_name_hash: addr_book_entry.name_hash,
         allowed_destination: addr_book_entry,
         destination,
@@ -1240,7 +1254,9 @@ pub async fn setup_create_balance_account_failure_tests(
                     .enumerate()
                     .map(|(i, pk)| (SlotId::new(i), Signer::new(*pk)))
                     .collect_vec(),
-                vec![],
+                BooleanSetting::Off,
+                BooleanSetting::Off,
+                SlotId::new(32),
             ),
         ],
         Some(&payer.pubkey()),
@@ -1262,7 +1278,7 @@ pub async fn finalize_balance_account_creation(context: &mut BalanceAccountTestC
             &context.multisig_op_account.pubkey(),
             &context.payer.pubkey(),
             context.balance_account_guid_hash,
-            context.expected_update.clone(),
+            context.expected_creation_params.clone(),
         )],
         Some(&context.payer.pubkey()),
         &[&context.payer],
@@ -2084,4 +2100,24 @@ pub async fn process_unwrapping(
             context.recent_blockhash,
         ))
         .await
+}
+
+pub async fn verify_address_book(
+    context: &mut BalanceAccountTestContext,
+    address_book_entries: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
+    whitelist_entries: Vec<AddressBookEntry>,
+) {
+    let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
+    assert_eq!(
+        wallet.address_book.filled_slots().len(),
+        address_book_entries.len()
+    );
+    assert_eq!(wallet.address_book.filled_slots(), address_book_entries);
+    let balance_account = wallet
+        .get_balance_account(&context.balance_account_guid_hash)
+        .unwrap();
+    assert_eq!(
+        whitelist_entries.to_set(),
+        wallet.get_allowed_destinations(balance_account).to_set()
+    );
 }

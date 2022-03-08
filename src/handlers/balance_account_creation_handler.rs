@@ -2,7 +2,7 @@ use crate::handlers::utils::{
     finalize_multisig_op, get_clock_from_next_account, next_program_account_info,
     start_multisig_config_op,
 };
-use crate::instruction::BalanceAccountUpdate;
+use crate::instruction::BalanceAccountCreation;
 use crate::model::balance_account::BalanceAccountGuidHash;
 use crate::model::multisig_op::MultisigOpParams;
 use crate::model::wallet::Wallet;
@@ -15,7 +15,7 @@ pub fn init(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     account_guid_hash: &BalanceAccountGuidHash,
-    update: &BalanceAccountUpdate,
+    creation_params: &BalanceAccountCreation,
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let multisig_op_account_info = next_program_account_info(accounts_iter, program_id)?;
@@ -25,7 +25,7 @@ pub fn init(
 
     let wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
     wallet.validate_config_initiator(initiator_account_info)?;
-    wallet.validate_add_balance_account(account_guid_hash, update)?;
+    wallet.validate_balance_account_creation(account_guid_hash, creation_params, program_id)?;
 
     start_multisig_config_op(
         &multisig_op_account_info,
@@ -34,7 +34,7 @@ pub fn init(
         MultisigOpParams::CreateBalanceAccount {
             account_guid_hash: *account_guid_hash,
             wallet_address: *wallet_account_info.key,
-            update: update.clone(),
+            creation_params: creation_params.clone(),
         },
     )
 }
@@ -43,7 +43,7 @@ pub fn finalize(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     account_guid_hash: &BalanceAccountGuidHash,
-    update: &BalanceAccountUpdate,
+    creation_params: &BalanceAccountCreation,
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let multisig_op_account_info = next_program_account_info(accounts_iter, program_id)?;
@@ -58,11 +58,11 @@ pub fn finalize(
         MultisigOpParams::CreateBalanceAccount {
             account_guid_hash: *account_guid_hash,
             wallet_address: *wallet_account_info.key,
-            update: update.clone(),
+            creation_params: creation_params.clone(),
         },
         || -> ProgramResult {
             let mut wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
-            wallet.add_balance_account(account_guid_hash, update)?;
+            wallet.create_balance_account(account_guid_hash, creation_params, program_id)?;
             Wallet::pack(wallet, &mut wallet_account_info.data.borrow_mut())?;
             Ok(())
         },

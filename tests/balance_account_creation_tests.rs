@@ -16,7 +16,7 @@ use common::instructions::finalize_balance_account_creation;
 use std::collections::HashSet;
 use strike_wallet::error::WalletError;
 use strike_wallet::model::balance_account::BalanceAccountGuidHash;
-use strike_wallet::model::multisig_op::ApprovalDisposition;
+use strike_wallet::model::multisig_op::{ApprovalDisposition, BooleanSetting};
 use strike_wallet::model::wallet::Wallet;
 use {
     solana_program_test::tokio,
@@ -78,6 +78,11 @@ async fn test_balance_account_creation() {
         balance_account.approval_timeout_for_transfer,
         Duration::from_secs(120)
     );
+    assert_eq!(balance_account.whitelist_enabled, BooleanSetting::Off);
+    assert_eq!(balance_account.dapps_enabled, BooleanSetting::Off);
+
+    let expected_address_book = vec![context.balance_account_address_book_entry.clone()];
+    verify_address_book(&mut context, expected_address_book, vec![]).await;
 
     // verify the multisig op account is closed
     assert!(context
@@ -156,7 +161,7 @@ async fn test_balance_account_creation_not_signed_by_rent_collector() {
         &context.multisig_op_account.pubkey(),
         &rent_collector.pubkey(),
         context.balance_account_guid_hash,
-        context.expected_update,
+        context.expected_creation_params,
     );
     instruction.accounts[2].is_signer = false;
 
@@ -190,7 +195,7 @@ async fn test_balance_account_creation_incorrect_hash() {
             &context.multisig_op_account.pubkey(),
             &context.payer.pubkey(),
             wrong_guid_hash,
-            context.expected_update.clone(),
+            context.expected_creation_params.clone(),
         )],
         Some(&context.payer.pubkey()),
         &[&context.payer],
@@ -206,8 +211,8 @@ async fn test_balance_account_creation_incorrect_hash() {
         TransactionError::InstructionError(0, Custom(WalletError::InvalidSignature as u32)),
     );
 
-    let altered_update = context.expected_update.borrow_mut();
-    altered_update.approvals_required_for_transfer = 0;
+    let altered_creation_params = context.expected_creation_params.borrow_mut();
+    altered_creation_params.approvals_required_for_transfer = 0;
 
     let finalize_transaction_wrong_update = Transaction::new_signed_with_payer(
         &[finalize_balance_account_creation(
@@ -216,7 +221,7 @@ async fn test_balance_account_creation_incorrect_hash() {
             &context.multisig_op_account.pubkey(),
             &context.payer.pubkey(),
             context.balance_account_guid_hash,
-            altered_update.clone(),
+            altered_creation_params.clone(),
         )],
         Some(&context.payer.pubkey()),
         &[&context.payer],

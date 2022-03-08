@@ -33,22 +33,22 @@ impl Processor {
 
             ProgramInstruction::InitBalanceAccountCreation {
                 account_guid_hash,
-                update,
+                creation_params,
             } => balance_account_creation_handler::init(
                 program_id,
                 accounts,
                 &account_guid_hash,
-                &update,
+                &creation_params,
             ),
 
             ProgramInstruction::FinalizeBalanceAccountCreation {
                 account_guid_hash,
-                update,
+                creation_params,
             } => balance_account_creation_handler::finalize(
                 program_id,
                 accounts,
                 &account_guid_hash,
-                &update,
+                &creation_params,
             ),
 
             ProgramInstruction::InitBalanceAccountNameUpdate {
