@@ -13,7 +13,7 @@ use strike_wallet::model::multisig_op::BooleanSetting;
 
 #[tokio::test]
 async fn test_address_book_update() {
-    let (mut context, _) = setup_balance_account_tests_and_finalize(Some(30000)).await;
+    let (mut context, _) = setup_balance_account_tests_and_finalize(Some(32000)).await;
 
     let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
 
@@ -107,7 +107,7 @@ async fn test_address_book_update() {
 
 #[tokio::test]
 async fn test_address_book_failures() {
-    let (mut context, _) = setup_balance_account_tests_and_finalize(Some(30000)).await;
+    let (mut context, _) = setup_balance_account_tests_and_finalize(Some(32000)).await;
 
     let wallet = get_wallet(&mut context.banks_client, &context.wallet_account.pubkey()).await;
 

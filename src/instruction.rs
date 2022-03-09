@@ -1015,56 +1015,6 @@ impl BalanceAccountCreation {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BalanceAccountUpdate {
-    pub name_hash: BalanceAccountNameHash,
-    pub approvals_required_for_transfer: u8,
-    pub approval_timeout_for_transfer: Duration,
-    pub add_transfer_approvers: Vec<(SlotId<Signer>, Signer)>,
-    pub remove_transfer_approvers: Vec<(SlotId<Signer>, Signer)>,
-    pub add_allowed_destinations: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
-    pub remove_allowed_destinations: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
-}
-
-impl BalanceAccountUpdate {
-    fn unpack(bytes: &[u8]) -> Result<BalanceAccountUpdate, ProgramError> {
-        if bytes.len() < 1 {
-            return Err(ProgramError::InvalidInstructionData);
-        }
-        let mut iter = bytes.iter();
-        let name_hash: [u8; 32] =
-            *read_fixed_size_array(&mut iter).ok_or(ProgramError::InvalidInstructionData)?;
-        let approvals_required_for_transfer =
-            *read_u8(&mut iter).ok_or(ProgramError::InvalidInstructionData)?;
-        let approval_timeout_for_transfer =
-            read_duration(&mut iter).ok_or(ProgramError::InvalidInstructionData)?;
-        let add_approvers = read_signers(&mut iter)?;
-        let remove_approvers = read_signers(&mut iter)?;
-        let add_allowed_destinations = read_address_book_entries(&mut iter)?;
-        let remove_allowed_destinations = read_address_book_entries(&mut iter)?;
-
-        Ok(BalanceAccountUpdate {
-            name_hash: BalanceAccountNameHash::new(&name_hash),
-            approvals_required_for_transfer,
-            approval_timeout_for_transfer,
-            add_transfer_approvers: add_approvers,
-            remove_transfer_approvers: remove_approvers,
-            add_allowed_destinations,
-            remove_allowed_destinations,
-        })
-    }
-
-    pub fn pack(&self, dst: &mut Vec<u8>) {
-        dst.extend_from_slice(self.name_hash.to_bytes());
-        dst.push(self.approvals_required_for_transfer);
-        append_duration(&self.approval_timeout_for_transfer, dst);
-        append_signers(&self.add_transfer_approvers, dst);
-        append_signers(&self.remove_transfer_approvers, dst);
-        append_address_book_entries(&self.add_allowed_destinations, dst);
-        append_address_book_entries(&self.remove_allowed_destinations, dst);
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BalanceAccountPolicyUpdate {
     pub approvals_required_for_transfer: Option<u8>,
     pub approval_timeout_for_transfer: Option<Duration>,

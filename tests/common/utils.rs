@@ -24,7 +24,7 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use strike_wallet::instruction::{
-    AddressBookUpdate, BalanceAccountPolicyUpdate, BalanceAccountCreation,
+    AddressBookUpdate, BalanceAccountCreation, BalanceAccountPolicyUpdate,
     BalanceAccountWhitelistUpdate, DAppBookUpdate, InitialWalletConfig, WalletConfigPolicyUpdate,
 };
 use strike_wallet::model::address_book::{

@@ -1,6 +1,6 @@
 use crate::error::WalletError;
 use crate::instruction::{
-    AddressBookUpdate, BalanceAccountCreation, BalanceAccountPolicyUpdate, BalanceAccountUpdate, DAppBookUpdate,
+    AddressBookUpdate, BalanceAccountCreation, BalanceAccountPolicyUpdate, DAppBookUpdate,
     InitialWalletConfig, WalletConfigPolicyUpdate,
 };
 use crate::model::address_book::{
@@ -359,7 +359,6 @@ impl Wallet {
             approval_timeout_for_transfer: creation_params.approval_timeout_for_transfer,
             transfer_approvers: Approvers::zero(),
             allowed_destinations: AllowedDestinations::zero(),
-            policy_update_locked: false,
             whitelist_enabled: creation_params.whitelist_enabled,
             dapps_enabled: creation_params.dapps_enabled,
             policy_update_locked: false,
@@ -437,59 +436,6 @@ impl Wallet {
         let balance_account_idx = self.get_balance_account_index(account_guid_hash)?;
         let balance_account = &mut self.balance_accounts[balance_account_idx].borrow_mut();
         balance_account.name_hash = account_name_hash.clone();
-        Ok(())
-    }
-
-    fn update_balance_account(
-        &mut self,
-        account_guid_hash: &BalanceAccountGuidHash,
-        update: &BalanceAccountUpdate,
-    ) -> ProgramResult {
-        let balance_account_idx = self.get_balance_account_index(account_guid_hash)?;
-        let perform_timeout_update = update.approval_timeout_for_transfer.as_secs() > 0;
-
-        if perform_timeout_update {
-            Wallet::validate_approval_timeout(&update.approval_timeout_for_transfer)?;
-        }
-
-        self.disable_transfer_approvers(balance_account_idx, &update.remove_transfer_approvers)?;
-        self.enable_transfer_approvers(balance_account_idx, &update.add_transfer_approvers)?;
-        self.disable_transfer_destinations(
-            balance_account_idx,
-            &update.remove_allowed_destinations,
-        )?;
-        self.enable_transfer_destinations(balance_account_idx, &update.add_allowed_destinations)?;
-
-        let balance_account = &mut self.balance_accounts[balance_account_idx].borrow_mut();
-        balance_account.name_hash = update.name_hash;
-        balance_account.approvals_required_for_transfer = update.approvals_required_for_transfer;
-
-        if perform_timeout_update {
-            balance_account.approval_timeout_for_transfer = update.approval_timeout_for_transfer;
-        }
-
-        if !update.add_allowed_destinations.is_empty() && balance_account.is_whitelist_disabled() {
-            msg!("Cannot add destinations when whitelisting status is Off");
-            return Err(WalletError::WhitelistDisabled.into());
-        }
-
-        let approvers_count_after_update = balance_account.transfer_approvers.count_enabled();
-        if usize::from(update.approvals_required_for_transfer) > approvers_count_after_update {
-            msg!(
-                "Approvals required for transfer {} can't exceed configured approvers count {}",
-                update.approvals_required_for_transfer,
-                approvers_count_after_update
-            );
-            return Err(WalletError::InvalidApproverCount.into());
-        }
-
-        Wallet::validate_approvals_required(balance_account.approvals_required_for_transfer)?;
-
-        if balance_account.transfer_approvers.count_enabled() == 0 {
-            msg!("At least one transfer approver has to be configured");
-            return Err(WalletError::NoApproversEnabled.into());
-        }
-
         Ok(())
     }
 

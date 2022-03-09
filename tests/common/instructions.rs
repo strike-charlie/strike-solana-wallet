@@ -9,8 +9,8 @@ use std::time::Duration;
 use strike_wallet::instruction::{BalanceAccountCreation, BalanceAccountPolicyUpdate};
 use strike_wallet::{
     instruction::{
-        AddressBookUpdate, BalanceAccountUpdate, BalanceAccountWhitelistUpdate, DAppBookUpdate,
-        InitialWalletConfig, ProgramInstruction, WalletConfigPolicyUpdate,
+        AddressBookUpdate, BalanceAccountWhitelistUpdate, DAppBookUpdate, InitialWalletConfig,
+        ProgramInstruction, WalletConfigPolicyUpdate,
     },
     model::{
         address_book::{AddressBookEntry, AddressBookEntryNameHash, DAppBookEntry},
