@@ -99,6 +99,17 @@ impl Wallet {
             .ok_or(WalletError::BalanceAccountNotFound.into())
     }
 
+    /// Verify that the given BalanceAccountGuidHash is associated with this Wallet.
+    pub fn validate_balance_account_guid_hash(
+        &self,
+        account_guid_hash: &BalanceAccountGuidHash,
+    ) -> ProgramResult {
+        match self.get_balance_account_with_slot_id(account_guid_hash) {
+            Ok(_) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
     pub fn validate_config_initiator(&self, initiator: &AccountInfo) -> ProgramResult {
         return self.validate_initiator(initiator, || self.get_config_approvers_keys());
     }

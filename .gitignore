@@ -1,4 +1,7 @@
 target/
 .idea/
 .vscode/
+.soteria/
+.coderrect/
+.*.sw[opn]
 strike-wallet.iml

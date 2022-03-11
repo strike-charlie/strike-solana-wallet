@@ -30,7 +30,9 @@ use strike_wallet::instruction::{
 use strike_wallet::model::address_book::{
     AddressBookEntry, AddressBookEntryNameHash, DAppBookEntry, DAppBookEntryNameHash,
 };
-use strike_wallet::model::balance_account::{BalanceAccountGuidHash, BalanceAccountNameHash};
+use strike_wallet::model::balance_account::{
+    BalanceAccount, BalanceAccountGuidHash, BalanceAccountNameHash,
+};
 use strike_wallet::model::multisig_op::{
     ApprovalDisposition, ApprovalDispositionRecord, BooleanSetting, MultisigOp, MultisigOpParams,
     OperationDisposition, SlotUpdateType, WrapDirection,
@@ -2146,4 +2148,237 @@ pub async fn verify_address_book(
         whitelist_entries.to_set(),
         wallet.get_allowed_destinations(&balance_account).to_set()
     );
+}
+
+/// Generate a random BalanceAccountGuidHash
+pub fn random_balance_account_guid_hash() -> BalanceAccountGuidHash {
+    BalanceAccountGuidHash::new(&Pubkey::new_unique().to_bytes())
+}
+
+/// Derive BalanceAccount account PDAs from their GUID hashes.
+pub fn find_balance_account_addresses(
+    hashes: &Vec<BalanceAccountGuidHash>,
+    program_id: &Pubkey,
+) -> Vec<Pubkey> {
+    hashes
+        .iter()
+        .map(|hash| BalanceAccount::find_address(hash, &program_id).0)
+        .collect()
+}
+
+/// Derive associated token account addresses from corresponding BalanceAccount
+/// addresses.
+pub fn get_associated_token_account_addresses(
+    balance_account_addresses: &Vec<Pubkey>,
+    token_mint_address: &Pubkey,
+) -> Vec<Pubkey> {
+    balance_account_addresses
+        .iter()
+        .map(|balance_account_pda| {
+            spl_associated_token_account::get_associated_token_address(
+                &balance_account_pda,
+                token_mint_address,
+            )
+        })
+        .collect()
+}
+/// Create a wallet with a barebones config. no adressbook entries or dapps.
+pub async fn create_wallet(
+    context: &mut TestContext,
+    wallet_keypair: &Keypair,
+    assistant_keypair: &Keypair,
+    signer_keypairs: &Vec<Keypair>,
+) {
+    init_wallet(
+        &mut context.banks_client,
+        &context.payer,
+        context.recent_blockhash,
+        &context.program_id,
+        &wallet_keypair,
+        &assistant_keypair,
+        InitialWalletConfig {
+            approvals_required_for_config: 1,
+            approval_timeout_for_config: Duration::from_secs(3600),
+            signers: signer_keypairs
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (SlotId::new(i), s.pubkey_as_signer()))
+                .collect(),
+            config_approvers: signer_keypairs
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (SlotId::new(i), s.pubkey_as_signer()))
+                .collect(),
+        },
+    )
+    .await
+    .unwrap();
+}
+
+/// Create multiple BalanceAccounts and optionally fund them, using
+/// context.payer. Return a vec of tuples, containing the GUID Hash and a nested
+/// PDA tuple, containing the PDA address and bump seed.
+pub async fn create_balance_accounts(
+    context: &mut TestContext,
+    wallet_address: &Pubkey,
+    assistant_keypair: &Keypair,
+    approver_keypairs: &Vec<Keypair>,
+    count: u8,
+    lamports: Option<u64>,
+) -> Vec<(BalanceAccountGuidHash, (Pubkey, u8))> {
+    // accumulate created GUID hashes into vec and return
+    let mut accounts: Vec<(BalanceAccountGuidHash, (Pubkey, u8))> =
+        Vec::with_capacity(count as usize);
+
+    for i in 0..count {
+        let name = format!("Account {}", i + 1);
+        let slot_id = SlotId::<BalanceAccount>::new(i.into());
+        accounts.push(
+            create_balance_account(
+                context,
+                slot_id,
+                wallet_address,
+                assistant_keypair,
+                approver_keypairs,
+                1,
+                Duration::from_secs(1000),
+                &name,
+                lamports,
+                i as u8, // address book slot index for this balance account
+            )
+            .await,
+        );
+    }
+    accounts
+}
+
+/// Create a BalanceAccount and optionally fund it.
+pub async fn create_balance_account(
+    context: &mut TestContext,
+    slot_id: SlotId<BalanceAccount>,
+    wallet_address: &Pubkey,
+    assistant_keypair: &Keypair,
+    approver_keypairs: &Vec<Keypair>,
+    approvals_required_for_transfer: u8,
+    approval_timeout_for_transfer: Duration,
+    name: &str,
+    some_lamports: Option<u64>,
+    address_book_slot_index: u8,
+) -> (BalanceAccountGuidHash, (Pubkey, u8)) {
+    let rent = context.banks_client.get_rent().await.unwrap();
+
+    let multisig_op_account = Keypair::new();
+    let multisig_account_rent = rent.minimum_balance(MultisigOp::LEN);
+    let slot_for_balance_account_address = SlotId::new(address_book_slot_index as usize);
+    let balance_account_name_hash = BalanceAccountNameHash::new(&hash_of(name.as_bytes()));
+    let balance_account_guid_hash =
+        BalanceAccountGuidHash::new(&hash_of(Uuid::new_v4().as_bytes()));
+
+    let creation_params = BalanceAccountCreation {
+        slot_id,
+        name_hash: balance_account_name_hash,
+        approvals_required_for_transfer,
+        approval_timeout_for_transfer,
+        transfer_approvers: approver_keypairs
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (SlotId::new(i), s.pubkey_as_signer()))
+            .collect(),
+        whitelist_enabled: BooleanSetting::Off,
+        dapps_enabled: BooleanSetting::Off,
+        address_book_slot_id: slot_for_balance_account_address,
+    };
+
+    let init_transaction = Transaction::new_signed_with_payer(
+        &[
+            system_instruction::create_account(
+                &context.payer.pubkey(),
+                &multisig_op_account.pubkey(),
+                multisig_account_rent,
+                MultisigOp::LEN as u64,
+                &context.program_id,
+            ),
+            init_balance_account_creation(
+                &context.program_id,
+                &wallet_address,
+                &multisig_op_account.pubkey(),
+                &assistant_keypair.pubkey(),
+                slot_id,
+                balance_account_guid_hash,
+                balance_account_name_hash,
+                approvals_required_for_transfer,
+                approval_timeout_for_transfer,
+                approver_keypairs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| (SlotId::new(i), s.pubkey_as_signer()))
+                    .collect(),
+                BooleanSetting::Off,
+                BooleanSetting::Off,
+                slot_for_balance_account_address,
+            ),
+        ],
+        Some(&context.payer.pubkey()),
+        &[&context.payer, &multisig_op_account, &assistant_keypair],
+        context.recent_blockhash,
+    );
+    context
+        .banks_client
+        .process_transaction(init_transaction)
+        .await
+        .unwrap();
+
+    approve_or_deny_1_of_2_multisig_op(
+        context.banks_client.borrow_mut(),
+        &context.program_id,
+        &multisig_op_account.pubkey(),
+        &approver_keypairs[0],
+        &context.payer,
+        &approver_keypairs[1].pubkey(),
+        context.recent_blockhash,
+        ApprovalDisposition::APPROVE,
+    )
+    .await;
+
+    let finalize_transaction = Transaction::new_signed_with_payer(
+        &[instructions::finalize_balance_account_creation(
+            &context.program_id,
+            &wallet_address,
+            &multisig_op_account.pubkey(),
+            &context.payer.pubkey(),
+            balance_account_guid_hash,
+            creation_params.clone(),
+        )],
+        Some(&context.payer.pubkey()),
+        &[&context.payer],
+        context.recent_blockhash,
+    );
+    context
+        .banks_client
+        .process_transaction(finalize_transaction)
+        .await
+        .unwrap();
+
+    // derive PDA of BalanceAccount from its GUID hash
+    let (pda, bump) = BalanceAccount::find_address(&balance_account_guid_hash, &context.program_id);
+
+    // fund the account
+    if let Some(lamports) = some_lamports {
+        context
+            .banks_client
+            .process_transaction(Transaction::new_signed_with_payer(
+                &[system_instruction::transfer(
+                    &context.payer.pubkey(),
+                    &pda,
+                    lamports,
+                )],
+                Some(&context.payer.pubkey()),
+                &[&context.payer],
+                context.recent_blockhash,
+            ))
+            .await
+            .unwrap();
+    }
+
+    (balance_account_guid_hash, (pda, bump))
 }

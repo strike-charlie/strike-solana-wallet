@@ -757,3 +757,97 @@ pub fn finalize_address_book_update(
         data,
     }
 }
+
+pub fn init_balance_account_enable_spl_token(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    assistant_account: &Pubkey,
+    token_mint_account: &Pubkey,
+    associated_token_accounts: &Vec<Pubkey>,
+    payer_account_guid_hash: &BalanceAccountGuidHash,
+    account_guid_hashes: &Vec<BalanceAccountGuidHash>,
+) -> Instruction {
+    let data = ProgramInstruction::InitBalanceAccountEnableSplToken {
+        payer_account_guid_hash: payer_account_guid_hash.clone(),
+        account_guid_hashes: account_guid_hashes.clone(),
+    }
+    .borrow()
+    .pack();
+
+    let mut accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*wallet_account, false),
+        AccountMeta::new(*assistant_account, true),
+        AccountMeta::new(*token_mint_account, false),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+    ];
+
+    // append variable number of associated token accounts to array
+    accounts.append(
+        &mut associated_token_accounts
+            .iter()
+            .map(|pubkey| AccountMeta::new(*pubkey, false))
+            .collect(),
+    );
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}
+
+pub fn finalize_balance_account_enable_spl_token(
+    program_id: &Pubkey,
+    wallet_account: &Pubkey,
+    multisig_op_account: &Pubkey,
+    rent_collector_account: &Pubkey,
+    token_mint_account: &Pubkey,
+    payer_balance_account: &Pubkey,
+    balance_accounts: &Vec<Pubkey>,
+    associated_token_accounts: &Vec<Pubkey>,
+    payer_account_guid_hash: &BalanceAccountGuidHash,
+    account_guid_hashes: &Vec<BalanceAccountGuidHash>,
+) -> Instruction {
+    let data = ProgramInstruction::FinalizeBalanceAccountEnableSplToken {
+        payer_account_guid_hash: payer_account_guid_hash.clone(),
+        account_guid_hashes: account_guid_hashes.clone(),
+    }
+    .borrow()
+    .pack();
+
+    let mut accounts = vec![
+        AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*wallet_account, false),
+        AccountMeta::new(*rent_collector_account, true),
+        AccountMeta::new(*token_mint_account, false),
+        AccountMeta::new(*payer_balance_account, false),
+        AccountMeta::new_readonly(sysvar::clock::id(), false),
+        AccountMeta::new_readonly(system_program::id(), false),
+        AccountMeta::new_readonly(spl_associated_token_account::id(), false),
+        AccountMeta::new_readonly(spl_token::id(), false),
+        AccountMeta::new_readonly(sysvar::rent::id(), false),
+    ];
+
+    // concat accounts vec with Associated Token AccountMetas.
+    accounts.append(
+        &mut associated_token_accounts
+            .iter()
+            .map(|pubkey| AccountMeta::new(*pubkey, false))
+            .collect(),
+    );
+
+    accounts.append(
+        &mut balance_accounts
+            .iter()
+            .map(|pubkey| AccountMeta::new(*pubkey, false))
+            .collect(),
+    );
+
+    Instruction {
+        program_id: *program_id,
+        accounts,
+        data,
+    }
+}

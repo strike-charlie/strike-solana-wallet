@@ -5,12 +5,10 @@ mod common;
 pub use common::instructions::*;
 pub use common::utils::*;
 
-use std::borrow::BorrowMut;
-
+use common::instructions::finalize_transfer;
 use solana_program::instruction::InstructionError::Custom;
 use solana_sdk::transaction::TransactionError;
-
-use common::instructions::finalize_transfer;
+use std::borrow::BorrowMut;
 use strike_wallet::error::WalletError;
 use strike_wallet::model::multisig_op::{ApprovalDisposition, OperationDisposition};
 use {

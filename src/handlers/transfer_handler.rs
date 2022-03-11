@@ -1,7 +1,8 @@
 use crate::error::WalletError;
 use crate::handlers::utils::{
-    finalize_multisig_op, get_clock_from_next_account, next_program_account_info,
-    start_multisig_transfer_op, transfer_sol_checked, validate_balance_account_and_get_seed,
+    create_associated_token_account_instruction, finalize_multisig_op, get_clock_from_next_account,
+    next_program_account_info, start_multisig_transfer_op, transfer_sol_checked,
+    validate_balance_account_and_get_seed,
 };
 use crate::model::address_book::AddressBookEntryNameHash;
 use crate::model::balance_account::BalanceAccountGuidHash;
@@ -9,17 +10,18 @@ use crate::model::multisig_op::MultisigOpParams;
 use crate::model::wallet::Wallet;
 use solana_program::account_info::{next_account_info, AccountInfo};
 use solana_program::entrypoint::ProgramResult;
-use solana_program::instruction::{AccountMeta, Instruction};
+use solana_program::msg;
 use solana_program::program::{invoke, invoke_signed};
+use solana_program::program_error::ProgramError;
 use solana_program::program_pack::Pack;
 use solana_program::pubkey::Pubkey;
 use solana_program::rent::Rent;
 use solana_program::system_program;
-use solana_program::{msg, sysvar, sysvar::Sysvar};
+use solana_program::sysvar::Sysvar;
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::id as SPL_TOKEN_ID;
 use spl_token::instruction as spl_instruction;
-use spl_token::state::{Account as SPLAccount, Account};
+use spl_token::state::Account as SPLAccount;
 
 pub fn init(
     program_id: &Pubkey,
@@ -37,6 +39,7 @@ pub fn init(
     let clock = get_clock_from_next_account(accounts_iter)?;
     let token_mint = next_account_info(accounts_iter)?;
     let destination_token_account = next_account_info(accounts_iter)?;
+    let fee_payer_account = next_account_info(accounts_iter)?;
 
     let wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
     let balance_account = wallet.get_balance_account(account_guid_hash)?;
@@ -54,49 +57,49 @@ pub fn init(
 
     if *token_mint.key != Pubkey::default() && *destination_token_account.owner == Pubkey::default()
     {
-        // we need to create the destination token account (if it had been created already
-        // it would be owned by the Token program).
+        // We need to create the associated token "destination" account. If it had
+        // been created already, it would be owned by the associated token program.
+
         // frst check if the source account has sufficient funds to create it
         let rent = Rent::get()?;
-        if rent.is_exempt(source_account.lamports(), Account::LEN) {
-            let (source_account_pda, bump_seed) =
-                Pubkey::find_program_address(&[&account_guid_hash.to_bytes()], program_id);
-            if &source_account_pda != source_account.key {
-                return Err(WalletError::InvalidSourceAccount.into());
+        if rent.is_exempt(source_account.lamports(), SPLAccount::LEN) {
+            match validate_balance_account_and_get_seed(
+                source_account,
+                account_guid_hash,
+                program_id,
+            ) {
+                Ok(bump_seed) => {
+                    // pay for associated token account with source account
+                    invoke_signed(
+                        &create_associated_token_account_instruction(
+                            source_account,
+                            destination_token_account,
+                            destination_account,
+                            token_mint,
+                        ),
+                        accounts,
+                        &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
+                    )?;
+                }
+                Err(error) => {
+                    if error == WalletError::InvalidPDA.into() {
+                        msg!("could not find BalanceAccount PDA for source GUID hash");
+                        return Err(WalletError::InvalidSourceAccount.into());
+                    } else {
+                        msg!("unhandled error validating source BalanceAccount GUID hash");
+                        return Err(ProgramError::InvalidArgument);
+                    }
+                }
             }
-            invoke_signed(
-                &Instruction {
-                    program_id: spl_associated_token_account::id(),
-                    accounts: vec![
-                        AccountMeta::new(source_account_pda, true),
-                        AccountMeta::new(*destination_token_account.key, false),
-                        AccountMeta::new_readonly(*destination_account.key, false),
-                        AccountMeta::new_readonly(*token_mint.key, false),
-                        AccountMeta::new_readonly(solana_program::system_program::id(), false),
-                        AccountMeta::new_readonly(spl_token::id(), false),
-                        AccountMeta::new_readonly(sysvar::rent::id(), false),
-                    ],
-                    data: vec![],
-                },
-                accounts,
-                &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
-            )?;
         } else {
-            let fee_payer_account = next_account_info(accounts_iter)?;
+            // pay for associated token account with fee-payer account.
             invoke(
-                &Instruction {
-                    program_id: spl_associated_token_account::id(),
-                    accounts: vec![
-                        AccountMeta::new(*fee_payer_account.key, true),
-                        AccountMeta::new(*destination_token_account.key, false),
-                        AccountMeta::new_readonly(*destination_account.key, false),
-                        AccountMeta::new_readonly(*token_mint.key, false),
-                        AccountMeta::new_readonly(solana_program::system_program::id(), false),
-                        AccountMeta::new_readonly(spl_token::id(), false),
-                        AccountMeta::new_readonly(sysvar::rent::id(), false),
-                    ],
-                    data: vec![],
-                },
+                &create_associated_token_account_instruction(
+                    fee_payer_account,
+                    destination_token_account,
+                    destination_account,
+                    token_mint,
+                ),
                 accounts,
             )?;
         }

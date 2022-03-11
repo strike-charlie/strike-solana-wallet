@@ -6,14 +6,16 @@ use solana_program::{
     account_info::{next_account_info, AccountInfo},
     clock::Clock,
     entrypoint::ProgramResult,
+    instruction::{AccountMeta, Instruction},
     msg,
     program::invoke_signed,
     program_error::ProgramError,
     program_pack::Pack,
     pubkey::Pubkey,
-    system_instruction,
+    system_instruction, sysvar,
     sysvar::Sysvar,
 };
+use spl_associated_token_account;
 use std::slice::Iter;
 use std::time::Duration;
 
@@ -59,17 +61,16 @@ pub fn calculate_expires(start: i64, duration: Duration) -> Result<i64, ProgramE
     Ok(expires_at.unwrap())
 }
 
+/// validate the PDA of a BalanceAccount and return its bump seed.
 pub fn validate_balance_account_and_get_seed(
-    balance_account: &AccountInfo,
+    balance_account_info: &AccountInfo,
     account_guid_hash: &BalanceAccountGuidHash,
     program_id: &Pubkey,
 ) -> Result<u8, ProgramError> {
-    let (account_pda, bump_seed) =
-        Pubkey::find_program_address(&[&account_guid_hash.to_bytes()], program_id);
-    if &account_pda != balance_account.key {
-        Err(WalletError::InvalidSourceAccount.into())
-    } else {
-        Ok(bump_seed)
+    let seeds = &[account_guid_hash.to_bytes()];
+    match verify_pda(program_id, seeds, balance_account_info.key, None) {
+        Ok((_pda, bump_seed)) => Ok(bump_seed),
+        Err(_error) => Err(WalletError::InvalidPDA.into()),
     }
 }
 
@@ -164,4 +165,48 @@ pub fn transfer_sol_checked<'a>(
         &[balance_account, to, system_program_account],
         &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
     )
+}
+
+/// Validate a given PDA and optionally its corresponding bump seed. If valid,
+/// the key and bump_seed are returned in the result.
+pub fn verify_pda(
+    program_id: &Pubkey,
+    seeds: &[&[u8]],
+    expected_key: &Pubkey,
+    expected_bump_seed: Option<u8>,
+) -> Result<(Pubkey, u8), ProgramError> {
+    let (key, bump_seed) = Pubkey::find_program_address(seeds, program_id);
+    if key != *expected_key {
+        return Err(WalletError::InvalidPDA.into());
+    }
+    // verify bump seed
+    if let Some(expected_bump_seed_value) = expected_bump_seed {
+        if bump_seed != expected_bump_seed_value {
+            return Err(WalletError::InvalidPDA.into());
+        }
+    }
+    Ok((key, bump_seed))
+}
+
+/// Build an instruction to create an "associated token account" for the given
+/// balance account.
+pub fn create_associated_token_account_instruction(
+    payer_account_info: &AccountInfo,
+    associated_token_account_info: &AccountInfo,
+    balance_account_info: &AccountInfo,
+    token_mint_account_info: &AccountInfo,
+) -> Instruction {
+    Instruction {
+        program_id: spl_associated_token_account::id(),
+        accounts: vec![
+            AccountMeta::new(*payer_account_info.key, true),
+            AccountMeta::new(*associated_token_account_info.key, false),
+            AccountMeta::new_readonly(*balance_account_info.key, false),
+            AccountMeta::new_readonly(*token_mint_account_info.key, false),
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new_readonly(sysvar::rent::id(), false),
+        ],
+        data: vec![],
+    }
 }

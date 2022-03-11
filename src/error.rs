@@ -104,6 +104,9 @@ pub enum WalletError {
     /// Signer Is A Transfer Approver
     #[error("Signer Is A Transfer Approver")]
     SignerIsTransferApprover,
+    /// Invalid PDA address or bump seed
+    #[error("Invalid PDA")]
+    InvalidPDA,
 }
 
 impl From<WalletError> for ProgramError {

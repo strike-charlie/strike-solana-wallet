@@ -1,20 +1,20 @@
 use crate::error::WalletError;
 use crate::handlers::utils::{
-    finalize_multisig_op, get_clock_from_next_account, next_program_account_info,
-    start_multisig_transfer_op, transfer_sol_checked, validate_balance_account_and_get_seed,
+    create_associated_token_account_instruction, finalize_multisig_op, get_clock_from_next_account,
+    next_program_account_info, start_multisig_transfer_op, transfer_sol_checked,
+    validate_balance_account_and_get_seed,
 };
 use crate::model::balance_account::BalanceAccountGuidHash;
 use crate::model::multisig_op::{MultisigOpParams, WrapDirection};
 use crate::model::wallet::Wallet;
 use solana_program::account_info::{next_account_info, AccountInfo};
 use solana_program::entrypoint::ProgramResult;
-use solana_program::instruction::{AccountMeta, Instruction};
+use solana_program::msg;
 use solana_program::program::{invoke, invoke_signed};
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::Pack;
 use solana_program::pubkey::Pubkey;
 use solana_program::system_program;
-use solana_program::{msg, sysvar};
 use spl_associated_token_account::get_associated_token_address;
 use spl_token::state::Account as SPLAccount;
 
@@ -55,19 +55,12 @@ pub fn init(
             program_id,
         )?;
         invoke_signed(
-            &Instruction {
-                program_id: spl_associated_token_account::id(),
-                accounts: vec![
-                    AccountMeta::new(*balance_account_info.key, true),
-                    AccountMeta::new(*wrapped_sol_account_info.key, false),
-                    AccountMeta::new_readonly(*balance_account_info.key, false),
-                    AccountMeta::new_readonly(*native_mint_account_info.key, false),
-                    AccountMeta::new_readonly(solana_program::system_program::id(), false),
-                    AccountMeta::new_readonly(spl_token::id(), false),
-                    AccountMeta::new_readonly(sysvar::rent::id(), false),
-                ],
-                data: vec![],
-            },
+            &create_associated_token_account_instruction(
+                balance_account_info,
+                wrapped_sol_account_info,
+                balance_account_info,
+                native_mint_account_info,
+            ),
             accounts,
             &[&[&account_guid_hash.to_bytes(), &[bump_seed]]],
         )?;
