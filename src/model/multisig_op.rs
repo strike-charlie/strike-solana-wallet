@@ -313,7 +313,13 @@ impl MultisigOp {
             return Err(WalletError::TransferDispositionNotFinal.into());
         }
 
-        if self.operation_disposition == OperationDisposition::APPROVED {
+        let mut operation_disposition = self.operation_disposition;
+        if clock.unix_timestamp > self.expires_at {
+            operation_disposition = OperationDisposition::EXPIRED
+        }
+        msg!("OperationDisposition: [{}]", operation_disposition.to_u8());
+
+        if operation_disposition == OperationDisposition::APPROVED {
             return Ok(true);
         }
 
