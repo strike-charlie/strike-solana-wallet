@@ -6,8 +6,11 @@ use std::ops::Index;
 use bitvec::prelude::*;
 use bitvec::slice::IterOnes;
 use itertools::Itertools;
+use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::program_error::ProgramError;
 use solana_program::program_pack::{Pack, Sealed};
+use solana_program::pubkey::Pubkey;
+use std::collections::BTreeMap;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct SlotId<A> {
@@ -227,4 +230,36 @@ impl<A> GetSlotIds<A> for Vec<(SlotId<A>, A)> {
     fn slot_ids(&self) -> Vec<&SlotId<A>> {
         self.iter().map(|(slot_id, _)| slot_id).collect_vec()
     }
+}
+
+pub fn unique_account_metas(
+    instructions: &Vec<Instruction>,
+    keys_to_skip: &Vec<Pubkey>,
+) -> Vec<AccountMeta> {
+    let mut accounts_by_key: BTreeMap<&Pubkey, AccountMeta> = BTreeMap::new();
+
+    for instruction in instructions.iter() {
+        accounts_by_key.insert(
+            &instruction.program_id,
+            AccountMeta {
+                pubkey: instruction.program_id,
+                is_writable: false,
+                is_signer: false,
+            },
+        );
+        for account in instruction.accounts.iter() {
+            if !keys_to_skip.contains(&account.pubkey) {
+                if accounts_by_key.contains_key(&account.pubkey) {
+                    // if the account was already in the map, make sure we do not downgrade its
+                    // permissions
+                    let meta = accounts_by_key.get_mut(&account.pubkey).unwrap();
+                    meta.is_writable |= account.is_writable;
+                    meta.is_signer |= account.is_signer
+                } else {
+                    accounts_by_key.insert(&account.pubkey, account.clone());
+                }
+            }
+        }
+    }
+    accounts_by_key.values().cloned().collect()
 }

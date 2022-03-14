@@ -4,7 +4,6 @@ use solana_program::instruction::{AccountMeta, Instruction};
 use solana_program::pubkey::Pubkey;
 use solana_program::{system_program, sysvar};
 use std::borrow::Borrow;
-use std::collections::BTreeMap;
 use std::time::Duration;
 use strike_wallet::instruction::{BalanceAccountCreation, BalanceAccountPolicyUpdate};
 use strike_wallet::{
@@ -18,6 +17,7 @@ use strike_wallet::{
         multisig_op::{ApprovalDisposition, BooleanSetting, SlotUpdateType, WrapDirection},
         signer::Signer,
     },
+    utils,
     utils::SlotId,
 };
 
@@ -596,32 +596,7 @@ pub fn finalize_dapp_transaction(
         sysvar::clock::id(),
     ];
 
-    let mut accounts_by_key: BTreeMap<&Pubkey, AccountMeta> = BTreeMap::new();
-
-    for instruction in instructions.iter() {
-        accounts_by_key.insert(
-            &instruction.program_id,
-            AccountMeta {
-                pubkey: instruction.program_id,
-                is_writable: false,
-                is_signer: false,
-            },
-        );
-        for account in instruction.accounts.iter() {
-            if !keys_to_skip.contains(&account.pubkey) {
-                if accounts_by_key.contains_key(&account.pubkey) {
-                    // if the account was already in the map, make sure we do not downgrade its
-                    // permissions
-                    let meta = accounts_by_key.get_mut(&account.pubkey).unwrap();
-                    meta.is_writable |= account.is_writable;
-                    meta.is_signer |= account.is_signer
-                } else {
-                    accounts_by_key.insert(&account.pubkey, account.clone());
-                }
-            }
-        }
-    }
-    accounts.extend(accounts_by_key.values().into_iter().cloned());
+    accounts.extend(utils::unique_account_metas(&instructions, &keys_to_skip));
 
     Instruction {
         program_id: *program_id,

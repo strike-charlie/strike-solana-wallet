@@ -21,7 +21,7 @@ use crate::serialization_utils::{
     read_fixed_size_array, read_optional_duration, read_optional_u8, read_slice, read_u16, read_u8,
     unpack_option,
 };
-use crate::utils::SlotId;
+use crate::utils::{unique_account_metas, SlotId};
 
 #[derive(Debug)]
 pub enum ProgramInstruction {
@@ -376,9 +376,24 @@ impl ProgramInstruction {
                 let mut buf2 = vec![0; DAppBookEntry::LEN];
                 dapp.pack_into_slice(buf2.as_mut_slice());
                 buf.extend_from_slice(&buf2[..]);
+                let account_metas = unique_account_metas(instructions, &Vec::new());
+                buf.put_u8(account_metas.len().as_u8());
+                for account_meta in account_metas.iter() {
+                    let mut account_meta_buf = vec![0; 1 + Signer::LEN];
+                    account_meta_buf[0] = 0;
+                    if account_meta.is_signer {
+                        account_meta_buf[0] |= 2;
+                    }
+                    if account_meta.is_writable {
+                        account_meta_buf[0] |= 1;
+                    }
+                    Signer::new(account_meta.pubkey)
+                        .pack_into_slice(&mut account_meta_buf[1..1 + Signer::LEN]);
+                    buf.extend_from_slice(account_meta_buf.as_slice());
+                }
                 buf.put_u16_le(instructions.len() as u16);
                 for instruction in instructions.iter() {
-                    append_instruction(instruction, &mut buf);
+                    append_instruction(instruction, &account_metas, &mut buf);
                 }
             }
             &ProgramInstruction::FinalizeDAppTransaction {
@@ -391,9 +406,24 @@ impl ProgramInstruction {
                 let mut buf2 = vec![0; DAppBookEntry::LEN];
                 dapp.pack_into_slice(buf2.as_mut_slice());
                 buf.extend_from_slice(&buf2[..]);
+                let account_metas = unique_account_metas(instructions, &Vec::new());
+                buf.put_u8(account_metas.len().as_u8());
+                for account_meta in account_metas.iter() {
+                    let mut account_meta_buf = vec![0; 1 + Signer::LEN];
+                    account_meta_buf[0] = 0;
+                    if account_meta.is_signer {
+                        account_meta_buf[0] |= 2;
+                    }
+                    if account_meta.is_writable {
+                        account_meta_buf[0] |= 1;
+                    }
+                    Signer::new(account_meta.pubkey)
+                        .pack_into_slice(&mut account_meta_buf[1..1 + Signer::LEN]);
+                    buf.extend_from_slice(account_meta_buf.as_slice());
+                }
                 buf.put_u16_le(instructions.len() as u16);
                 for instruction in instructions.iter() {
-                    append_instruction(instruction, &mut buf);
+                    append_instruction(instruction, &account_metas, &mut buf);
                 }
             }
             &ProgramInstruction::InitAccountSettingsUpdate {
@@ -1097,13 +1127,40 @@ fn append_signers(signers: &Vec<(SlotId<Signer>, Signer)>, dst: &mut Vec<u8>) {
 }
 
 fn read_instructions(iter: &mut Iter<u8>) -> Result<Vec<Instruction>, ProgramError> {
+    let account_meta_count = read_u8(iter).ok_or(ProgramError::InvalidInstructionData)?;
+    let account_metas = (0..*account_meta_count)
+        .map(|_| read_account_meta(iter).unwrap())
+        .collect();
+
     let instruction_count = read_u16(iter).ok_or(ProgramError::InvalidInstructionData)?;
     Ok((0..instruction_count)
-        .map(|_| read_instruction(iter).unwrap())
+        .map(|_| read_instruction(iter, &account_metas).unwrap())
         .collect())
 }
 
-fn read_instruction(iter: &mut Iter<u8>) -> Result<Instruction, ProgramError> {
+fn read_account_meta(iter: &mut Iter<u8>) -> Result<AccountMeta, ProgramError> {
+    let flags = *read_u8(iter)
+        .ok_or(ProgramError::InvalidInstructionData)
+        .unwrap();
+    let pubkey = Pubkey::new(
+        read_slice(iter, 32)
+            .ok_or(ProgramError::InvalidInstructionData)
+            .unwrap()
+            .try_into()
+            .ok()
+            .unwrap(),
+    );
+    Ok(AccountMeta {
+        is_writable: (flags & 1) == 1,
+        is_signer: (flags & 2) == 2,
+        pubkey,
+    })
+}
+
+fn read_instruction(
+    iter: &mut Iter<u8>,
+    account_metas: &Vec<AccountMeta>,
+) -> Result<Instruction, ProgramError> {
     let program_id = Pubkey::new(
         read_slice(iter, 32)
             .ok_or(ProgramError::InvalidInstructionData)?
@@ -1112,22 +1169,10 @@ fn read_instruction(iter: &mut Iter<u8>) -> Result<Instruction, ProgramError> {
     let account_count = read_u16(iter).ok_or(ProgramError::InvalidInstructionData)?;
     let accounts = (0..account_count)
         .map(|_| {
-            let flags = *read_u8(iter)
+            let index = *read_u8(iter)
                 .ok_or(ProgramError::InvalidInstructionData)
                 .unwrap();
-            let pubkey = Pubkey::new(
-                read_slice(iter, 32)
-                    .ok_or(ProgramError::InvalidInstructionData)
-                    .unwrap()
-                    .try_into()
-                    .ok()
-                    .unwrap(),
-            );
-            AccountMeta {
-                is_writable: (flags & 1) == 1,
-                is_signer: (flags & 2) == 2,
-                pubkey,
-            }
+            account_metas[index.as_usize()].clone()
         })
         .collect();
     let data_len = read_u16(iter).ok_or(ProgramError::InvalidInstructionData)?;
@@ -1141,7 +1186,25 @@ fn read_instruction(iter: &mut Iter<u8>) -> Result<Instruction, ProgramError> {
     })
 }
 
-pub fn append_instruction(instruction: &Instruction, dst: &mut Vec<u8>) {
+pub fn append_instruction(
+    instruction: &Instruction,
+    account_metas: &Vec<AccountMeta>,
+    dst: &mut Vec<u8>,
+) {
+    dst.extend_from_slice(instruction.program_id.as_ref());
+    dst.put_u16_le(instruction.accounts.len() as u16);
+    for account in instruction.accounts.iter() {
+        let index = account_metas
+            .iter()
+            .position(|a| a.pubkey == account.pubkey)
+            .unwrap();
+        dst.put_u8(index.as_u8());
+    }
+    dst.put_u16_le(instruction.data.len().as_u16());
+    dst.extend_from_slice(instruction.data.as_slice());
+}
+
+pub fn append_instruction_with_account_metas(instruction: &Instruction, dst: &mut Vec<u8>) {
     dst.extend_from_slice(instruction.program_id.as_ref());
     dst.put_u16_le(instruction.accounts.len() as u16);
     for account in instruction.accounts.iter() {
