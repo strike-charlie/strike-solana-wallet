@@ -261,5 +261,9 @@ pub fn unique_account_metas(
             }
         }
     }
-    accounts_by_key.values().cloned().collect()
+    accounts_by_key
+        .values()
+        .cloned()
+        .sorted_by(|a, b| a.pubkey.to_bytes().cmp(&b.pubkey.to_bytes()))
+        .collect()
 }

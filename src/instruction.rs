@@ -1161,11 +1161,10 @@ fn read_instruction(
     iter: &mut Iter<u8>,
     account_metas: &Vec<AccountMeta>,
 ) -> Result<Instruction, ProgramError> {
-    let program_id = Pubkey::new(
-        read_slice(iter, 32)
-            .ok_or(ProgramError::InvalidInstructionData)?
-            .into(),
-    );
+    let program_id_index = *read_u8(iter)
+        .ok_or(ProgramError::InvalidInstructionData)
+        .unwrap();
+    let program_id = account_metas[program_id_index.as_usize()].pubkey;
     let account_count = read_u16(iter).ok_or(ProgramError::InvalidInstructionData)?;
     let accounts = (0..account_count)
         .map(|_| {
@@ -1186,25 +1185,29 @@ fn read_instruction(
     })
 }
 
+fn index_of_account(account_metas: &Vec<AccountMeta>, pubkey: &Pubkey) -> u8 {
+    account_metas
+        .iter()
+        .position(|a| a.pubkey == *pubkey)
+        .unwrap()
+        .as_u8()
+}
+
 pub fn append_instruction(
     instruction: &Instruction,
     account_metas: &Vec<AccountMeta>,
     dst: &mut Vec<u8>,
 ) {
-    dst.extend_from_slice(instruction.program_id.as_ref());
+    dst.put_u8(index_of_account(account_metas, &instruction.program_id));
     dst.put_u16_le(instruction.accounts.len() as u16);
     for account in instruction.accounts.iter() {
-        let index = account_metas
-            .iter()
-            .position(|a| a.pubkey == account.pubkey)
-            .unwrap();
-        dst.put_u8(index.as_u8());
+        dst.put_u8(index_of_account(account_metas, &account.pubkey).as_u8());
     }
     dst.put_u16_le(instruction.data.len().as_u16());
     dst.extend_from_slice(instruction.data.as_slice());
 }
 
-pub fn append_instruction_with_account_metas(instruction: &Instruction, dst: &mut Vec<u8>) {
+pub fn append_instruction_expanded(instruction: &Instruction, dst: &mut Vec<u8>) {
     dst.extend_from_slice(instruction.program_id.as_ref());
     dst.put_u16_le(instruction.accounts.len() as u16);
     for account in instruction.accounts.iter() {

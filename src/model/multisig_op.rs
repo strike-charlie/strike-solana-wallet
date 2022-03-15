@@ -1,6 +1,6 @@
 use crate::error::WalletError;
 use crate::instruction::{
-    append_instruction_with_account_metas, AddressBookUpdate, BalanceAccountCreation,
+    append_instruction_expanded, AddressBookUpdate, BalanceAccountCreation,
     BalanceAccountPolicyUpdate, DAppBookUpdate, WalletConfigPolicyUpdate,
 };
 use crate::model::address_book::DAppBookEntry;
@@ -623,7 +623,7 @@ impl MultisigOpParams {
                 bytes.extend_from_slice(&buf[..]);
                 bytes.put_u16_le(instructions.len().as_u16());
                 for instruction in instructions.into_iter() {
-                    append_instruction_with_account_metas(instruction, &mut bytes);
+                    append_instruction_expanded(instruction, &mut bytes);
                 }
 
                 hash(&bytes)

@@ -587,7 +587,7 @@ pub fn finalize_dapp_transaction(
     ];
 
     // we also need to include any accounts referenced by the dapp instructions, but we don't
-    // want to repeat keys, so we'll use a BTreeMap to keep track of the ones we've already seen
+    // want to repeat keys
     let keys_to_skip = vec![
         *multisig_op_account,
         *wallet_account,
