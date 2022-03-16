@@ -72,7 +72,7 @@ async fn setup_dapp_test() -> DAppTest {
             &context.program_id,
             &context.wallet_account.pubkey(),
             &inner_multisig_op_account.pubkey(),
-            &context.assistant_account.pubkey(),
+            &context.initiator_account.pubkey(),
             &balance_account,
             &context.destination.pubkey(),
             context.balance_account_guid_hash,
@@ -98,7 +98,7 @@ async fn setup_dapp_test() -> DAppTest {
                     &context.program_id,
                     &context.wallet_account.pubkey(),
                     &multisig_op_account.pubkey(),
-                    &context.assistant_account.pubkey(),
+                    &context.initiator_account.pubkey(),
                     &context.balance_account_guid_hash,
                     dapp,
                     inner_instructions.clone(),
@@ -108,7 +108,7 @@ async fn setup_dapp_test() -> DAppTest {
             &[
                 &context.payer,
                 &multisig_op_account,
-                &context.assistant_account,
+                &context.initiator_account,
             ],
             context.recent_blockhash,
         ))
@@ -149,7 +149,7 @@ async fn test_dapp_transaction_simulation() {
                 Some(&context.payer.pubkey()),
                 &[
                     &context.payer,
-                    &context.assistant_account,
+                    &context.initiator_account,
                     &dapp_test.inner_multisig_op_account,
                 ],
                 context.recent_blockhash,
@@ -185,7 +185,7 @@ async fn test_dapp_transaction_bad_signature() {
                 Some(&context.payer.pubkey()),
                 &[
                     &context.payer,
-                    &context.assistant_account,
+                    &context.initiator_account,
                     &dapp_test.inner_multisig_op_account,
                 ],
                 context.recent_blockhash,
@@ -243,7 +243,7 @@ async fn test_dapp_transaction() {
             Some(&context.payer.pubkey()),
             &[
                 &context.payer,
-                &context.assistant_account,
+                &context.initiator_account,
                 &dapp_test.inner_multisig_op_account,
             ],
             context.recent_blockhash,
@@ -310,7 +310,7 @@ async fn test_dapp_transaction_denied() {
             Some(&context.payer.pubkey()),
             &[
                 &context.payer,
-                &context.assistant_account,
+                &context.initiator_account,
                 &dapp_test.inner_multisig_op_account,
             ],
             context.recent_blockhash,
@@ -412,7 +412,7 @@ async fn test_dapp_transaction_with_spl_transfers() {
                     &context.program_id,
                     &context.wallet_account.pubkey(),
                     &multisig_op_account.pubkey(),
-                    &context.assistant_account.pubkey(),
+                    &context.initiator_account.pubkey(),
                     &context.balance_account_guid_hash,
                     dapp,
                     inner_instructions.clone(),
@@ -422,7 +422,7 @@ async fn test_dapp_transaction_with_spl_transfers() {
             &[
                 &context.payer,
                 &multisig_op_account,
-                &context.assistant_account,
+                &context.initiator_account,
             ],
             context.recent_blockhash,
         ))
@@ -483,7 +483,7 @@ async fn test_dapp_transaction_without_dapps_enabled() {
                         &context.program_id,
                         &context.wallet_account.pubkey(),
                         &multisig_op_account.pubkey(),
-                        &context.assistant_account.pubkey(),
+                        &context.initiator_account.pubkey(),
                         &context.balance_account_guid_hash,
                         dapp,
                         vec![],
@@ -493,7 +493,7 @@ async fn test_dapp_transaction_without_dapps_enabled() {
                 &[
                     &context.payer,
                     &multisig_op_account,
-                    &context.assistant_account,
+                    &context.initiator_account,
                 ],
                 context.recent_blockhash,
             ))
@@ -540,7 +540,7 @@ async fn test_dapp_transaction_unwhitelisted() {
                         &context.program_id,
                         &context.wallet_account.pubkey(),
                         &multisig_op_account.pubkey(),
-                        &context.assistant_account.pubkey(),
+                        &context.initiator_account.pubkey(),
                         &context.balance_account_guid_hash,
                         dapp,
                         vec![],
@@ -550,7 +550,7 @@ async fn test_dapp_transaction_unwhitelisted() {
                 &[
                     &context.payer,
                     &multisig_op_account,
-                    &context.assistant_account,
+                    &context.initiator_account,
                 ],
                 context.recent_blockhash,
             ))
@@ -591,7 +591,7 @@ async fn test_dapp_transaction_whitelisted() {
                     &context.program_id,
                     &context.wallet_account.pubkey(),
                     &multisig_op_account.pubkey(),
-                    &context.assistant_account.pubkey(),
+                    &context.initiator_account.pubkey(),
                     &context.balance_account_guid_hash,
                     context.allowed_dapp,
                     vec![],
@@ -601,7 +601,7 @@ async fn test_dapp_transaction_whitelisted() {
             &[
                 &context.payer,
                 &multisig_op_account,
-                &context.assistant_account,
+                &context.initiator_account,
             ],
             context.recent_blockhash,
         ))

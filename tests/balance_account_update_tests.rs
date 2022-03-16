@@ -176,7 +176,7 @@ async fn test_only_one_pending_balance_account_policy_update_allowed_at_time() {
                     &context.program_id,
                     &context.wallet_account.pubkey(),
                     &multisig_op_account.pubkey(),
-                    &context.assistant_account.pubkey(),
+                    &context.initiator_account.pubkey(),
                     context.balance_account_guid_hash,
                     update1.clone(),
                 ),
@@ -185,7 +185,7 @@ async fn test_only_one_pending_balance_account_policy_update_allowed_at_time() {
             &[
                 &context.payer,
                 &multisig_op_account,
-                &context.assistant_account,
+                &context.initiator_account,
             ],
             context.recent_blockhash,
         ))
@@ -198,13 +198,13 @@ async fn test_only_one_pending_balance_account_policy_update_allowed_at_time() {
         &mut context.banks_client,
         context.recent_blockhash,
         &context.payer,
-        &context.assistant_account,
+        &context.initiator_account,
         &multisig_op_account2,
         init_balance_account_policy_update_instruction(
             &context.program_id,
             &context.wallet_account.pubkey(),
             &multisig_op_account2.pubkey(),
-            &context.assistant_account.pubkey(),
+            &context.initiator_account.pubkey(),
             context.balance_account_guid_hash,
             update2.clone(),
         ),
@@ -258,7 +258,7 @@ async fn test_only_one_pending_balance_account_policy_update_allowed_at_time() {
                     &context.program_id,
                     &context.wallet_account.pubkey(),
                     &multisig_op_account.pubkey(),
-                    &context.assistant_account.pubkey(),
+                    &context.initiator_account.pubkey(),
                     context.balance_account_guid_hash,
                     update2.clone(),
                 ),
@@ -267,7 +267,7 @@ async fn test_only_one_pending_balance_account_policy_update_allowed_at_time() {
             &[
                 &context.payer,
                 &multisig_op_account,
-                &context.assistant_account,
+                &context.initiator_account,
             ],
             context.recent_blockhash,
         ))
@@ -308,7 +308,7 @@ async fn test_balance_account_policy_update_is_denied() {
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 context.balance_account_guid_hash,
                 update.clone(),
             ),
@@ -317,7 +317,7 @@ async fn test_balance_account_policy_update_is_denied() {
         &[
             &context.payer,
             &multisig_op_account,
-            &context.assistant_account,
+            &context.initiator_account,
         ],
         context.recent_blockhash,
     );
@@ -439,13 +439,13 @@ async fn invalid_balance_account_policy_updates() {
             &mut context.banks_client,
             context.recent_blockhash,
             &context.payer,
-            &context.assistant_account,
+            &context.initiator_account,
             &multisig_op_account,
             init_balance_account_policy_update_instruction(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 wrong_balance_account_guid_hash,
                 BalanceAccountPolicyUpdate {
                     approvals_required_for_transfer: Some(2),
@@ -465,13 +465,13 @@ async fn invalid_balance_account_policy_updates() {
             &mut context.banks_client,
             context.recent_blockhash,
             &context.payer,
-            &context.assistant_account,
+            &context.initiator_account,
             &multisig_op_account,
             init_balance_account_policy_update_instruction(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 context.balance_account_guid_hash,
                 BalanceAccountPolicyUpdate {
                     approvals_required_for_transfer: Some(3),
@@ -491,13 +491,13 @@ async fn invalid_balance_account_policy_updates() {
             &mut context.banks_client,
             context.recent_blockhash,
             &context.payer,
-            &context.assistant_account,
+            &context.initiator_account,
             &multisig_op_account,
             init_balance_account_policy_update_instruction(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 context.balance_account_guid_hash,
                 BalanceAccountPolicyUpdate {
                     approvals_required_for_transfer: Some(2),
@@ -520,13 +520,13 @@ async fn invalid_balance_account_policy_updates() {
             &mut context.banks_client,
             context.recent_blockhash,
             &context.payer,
-            &context.assistant_account,
+            &context.initiator_account,
             &multisig_op_account,
             init_balance_account_policy_update_instruction(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 context.balance_account_guid_hash,
                 BalanceAccountPolicyUpdate {
                     approvals_required_for_transfer: Some(2),

@@ -68,7 +68,7 @@ async fn wallet_config_policy_update() {
     let multisig_op_account = utils::init_wallet_config_policy_update(
         &mut context,
         wallet_account.pubkey(),
-        &assistant_account,
+        &approvers[2],
         &update,
     )
     .await

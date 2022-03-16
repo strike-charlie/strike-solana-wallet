@@ -61,7 +61,7 @@ async fn test_dapp_book_update() {
     let multisig_op_account = utils::init_dapp_book_update(
         &mut context,
         wallet_account.pubkey(),
-        &assistant_account,
+        &approvers[0],
         add_dapp.clone(),
     )
     .await
@@ -113,7 +113,7 @@ async fn test_dapp_book_update() {
     let remove_multisig_op_account = utils::init_dapp_book_update(
         &mut context,
         wallet_account.pubkey(),
-        &assistant_account,
+        &approvers[0],
         remove_dapp.clone(),
     )
     .await

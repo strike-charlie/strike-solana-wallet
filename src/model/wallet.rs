@@ -56,6 +56,15 @@ impl Wallet {
     pub const MAX_APPROVAL_TIMEOUT: Duration = Duration::from_secs(60 * 60 * 24 * 365);
     pub const MAX_DAPP_BOOK_ENTRIES: usize = 32;
 
+    pub fn get_signers_keys(&self) -> Vec<Pubkey> {
+        return self
+            .signers
+            .filled_slots()
+            .iter()
+            .map(|signer| signer.1.key)
+            .collect_vec();
+    }
+
     pub fn get_config_approvers_keys(&self) -> Vec<Pubkey> {
         self.get_approvers_keys(&self.config_approvers)
     }
@@ -100,17 +109,15 @@ impl Wallet {
     }
 
     pub fn validate_config_initiator(&self, initiator: &AccountInfo) -> ProgramResult {
-        return self.validate_initiator(initiator, || self.get_config_approvers_keys());
+        return self.validate_initiator(initiator, || self.get_signers_keys());
     }
 
     pub fn validate_transfer_initiator(
         &self,
-        balance_account: &BalanceAccount,
+        _balance_account: &BalanceAccount,
         initiator: &AccountInfo,
     ) -> ProgramResult {
-        return self.validate_initiator(initiator, || {
-            self.get_transfer_approvers_keys(balance_account)
-        });
+        return self.validate_initiator(initiator, || self.get_signers_keys());
     }
 
     /// Validates the state of a wallet.
@@ -147,12 +154,12 @@ impl Wallet {
     fn validate_initiator<F: FnOnce() -> Vec<Pubkey>>(
         &self,
         initiator: &AccountInfo,
-        get_approvers: F,
+        get_initiators: F,
     ) -> ProgramResult {
         if !initiator.is_signer {
             return Err(WalletError::InvalidSignature.into());
         }
-        if initiator.key == &self.assistant.key || get_approvers().contains(initiator.key) {
+        if initiator.key == &self.assistant.key || get_initiators().contains(initiator.key) {
             Ok(())
         } else {
             msg!("Transactions can only be initiated by an authorized account");

@@ -46,12 +46,12 @@ fn init_multisig_op(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     program_instruction: ProgramInstruction,
 ) -> Instruction {
     let mut accounts = vec![AccountMeta::new(*multisig_op_account, false)];
     accounts.push(AccountMeta::new_readonly(*wallet_account, false));
-    accounts.push(AccountMeta::new_readonly(*assistant_account, true));
+    accounts.push(AccountMeta::new_readonly(*initiator_account, true));
     accounts.push(AccountMeta::new_readonly(sysvar::clock::id(), false));
 
     Instruction {
@@ -92,7 +92,7 @@ pub fn init_balance_account_creation(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     slot_id: SlotId<BalanceAccount>,
     account_guid_hash: BalanceAccountGuidHash,
     name_hash: BalanceAccountNameHash,
@@ -107,7 +107,7 @@ pub fn init_balance_account_creation(
         program_id,
         wallet_account,
         multisig_op_account,
-        assistant_account,
+        initiator_account,
         ProgramInstruction::InitBalanceAccountCreation {
             account_guid_hash,
             creation_params: BalanceAccountCreation {
@@ -156,14 +156,14 @@ pub fn init_dapp_book_update(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     update: DAppBookUpdate,
 ) -> Instruction {
     init_multisig_op(
         program_id,
         wallet_account,
         multisig_op_account,
-        assistant_account,
+        initiator_account,
         ProgramInstruction::InitDAppBookUpdate { update },
     )
 }
@@ -196,7 +196,7 @@ pub fn init_balance_account_policy_update_instruction(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     account_guid_hash: BalanceAccountGuidHash,
     update: BalanceAccountPolicyUpdate,
 ) -> Instruction {
@@ -205,7 +205,7 @@ pub fn init_balance_account_policy_update_instruction(
         accounts: vec![
             AccountMeta::new(*multisig_op_account, false),
             AccountMeta::new(*wallet_account, false),
-            AccountMeta::new_readonly(*assistant_account, true),
+            AccountMeta::new_readonly(*initiator_account, true),
             AccountMeta::new_readonly(sysvar::clock::id(), false),
         ],
         data: ProgramInstruction::InitBalanceAccountPolicyUpdate {
@@ -248,7 +248,7 @@ pub fn init_transfer(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     source_account: &Pubkey,
     destination_account: &Pubkey,
     account_guid_hash: BalanceAccountGuidHash,
@@ -273,7 +273,7 @@ pub fn init_transfer(
         AccountMeta::new_readonly(*wallet_account, false),
         AccountMeta::new(*source_account, false),
         AccountMeta::new_readonly(*destination_account, false),
-        AccountMeta::new_readonly(*assistant_account, true),
+        AccountMeta::new_readonly(*initiator_account, true),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
         AccountMeta::new_readonly(*token_mint, false),
         AccountMeta::new(destination_token_account, false),
@@ -351,7 +351,7 @@ pub fn init_wrap_unwrap(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     balance_account: &Pubkey,
     account_guid_hash: &BalanceAccountGuidHash,
     amount: u64,
@@ -376,7 +376,7 @@ pub fn init_wrap_unwrap(
         AccountMeta::new(*balance_account, false),
         AccountMeta::new(wrapped_sol_account, false),
         AccountMeta::new_readonly(spl_token::native_mint::id(), false),
-        AccountMeta::new_readonly(*assistant_account, true),
+        AccountMeta::new_readonly(*initiator_account, true),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
         AccountMeta::new_readonly(system_program::id(), false),
         AccountMeta::new_readonly(spl_token::id(), false),
@@ -489,7 +489,7 @@ pub fn init_wallet_config_policy_update_instruction(
     program_id: Pubkey,
     wallet_account: Pubkey,
     multisig_op_account: Pubkey,
-    assistant_account: Pubkey,
+    initiator_account: Pubkey,
     update: &WalletConfigPolicyUpdate,
 ) -> Instruction {
     Instruction {
@@ -497,7 +497,7 @@ pub fn init_wallet_config_policy_update_instruction(
         accounts: vec![
             AccountMeta::new(multisig_op_account, false),
             AccountMeta::new(wallet_account, false),
-            AccountMeta::new_readonly(assistant_account, true),
+            AccountMeta::new_readonly(initiator_account, true),
             AccountMeta::new_readonly(sysvar::clock::id(), false),
         ],
         data: ProgramInstruction::InitWalletConfigPolicyUpdate {
@@ -535,7 +535,7 @@ pub fn init_dapp_transaction(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     account_guid_hash: &BalanceAccountGuidHash,
     dapp: DAppBookEntry,
     instructions: Vec<Instruction>,
@@ -551,7 +551,7 @@ pub fn init_dapp_transaction(
     let accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
         AccountMeta::new_readonly(*wallet_account, false),
-        AccountMeta::new_readonly(*assistant_account, true),
+        AccountMeta::new_readonly(*initiator_account, true),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
     ];
 
@@ -612,7 +612,7 @@ pub fn init_account_settings_update(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     account_guid_hash: BalanceAccountGuidHash,
     whitelist_status: Option<BooleanSetting>,
     dapps_enabled: Option<BooleanSetting>,
@@ -621,7 +621,7 @@ pub fn init_account_settings_update(
         program_id,
         wallet_account,
         multisig_op_account,
-        assistant_account,
+        initiator_account,
         ProgramInstruction::InitAccountSettingsUpdate {
             account_guid_hash,
             whitelist_enabled: whitelist_status,
@@ -665,7 +665,7 @@ pub fn init_balance_account_name_update(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     account_guid_hash: BalanceAccountGuidHash,
     account_name_hash: BalanceAccountNameHash,
 ) -> Instruction {
@@ -673,7 +673,7 @@ pub fn init_balance_account_name_update(
         program_id,
         wallet_account,
         multisig_op_account,
-        assistant_account,
+        initiator_account,
         ProgramInstruction::InitBalanceAccountNameUpdate {
             account_guid_hash,
             account_name_hash,
@@ -714,7 +714,7 @@ pub fn init_address_book_update(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
-    assistant_account: &Pubkey,
+    initiator_account: &Pubkey,
     add_address_book_entries: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
     remove_address_book_entries: Vec<(SlotId<AddressBookEntry>, AddressBookEntry)>,
     balance_account_whitelist_updates: Vec<BalanceAccountWhitelistUpdate>,
@@ -723,7 +723,7 @@ pub fn init_address_book_update(
         program_id,
         wallet_account,
         multisig_op_account,
-        assistant_account,
+        initiator_account,
         ProgramInstruction::InitAddressBookUpdate {
             update: AddressBookUpdate {
                 add_address_book_entries: add_address_book_entries.clone(),

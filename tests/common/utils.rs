@@ -126,7 +126,7 @@ pub async fn init_multisig_op(
     test_context: &mut TestContext,
     multisig_op_account: Keypair,
     instruction: Instruction,
-    assistant_account: &Keypair,
+    initiator_account: &Keypair,
 ) -> transport::Result<()> {
     test_context
         .banks_client
@@ -140,7 +140,7 @@ pub async fn init_multisig_op(
                 instruction,
             ],
             Some(&test_context.payer.pubkey()),
-            &[&test_context.payer, &multisig_op_account, assistant_account],
+            &[&test_context.payer, &multisig_op_account, initiator_account],
             test_context.recent_blockhash,
         ))
         .await
@@ -213,7 +213,7 @@ pub async fn get_multisig_op_data(
 pub async fn init_wallet_config_policy_update(
     test_context: &mut TestContext,
     wallet_account: Pubkey,
-    assistant: &Keypair,
+    initiator: &Keypair,
     update: &WalletConfigPolicyUpdate,
 ) -> Result<Pubkey, TransportError> {
     let multisig_op_keypair = Keypair::new();
@@ -223,11 +223,11 @@ pub async fn init_wallet_config_policy_update(
         test_context.program_id,
         wallet_account,
         multisig_op_pubkey,
-        assistant.pubkey(),
+        initiator.pubkey(),
         update,
     );
 
-    init_multisig_op(test_context, multisig_op_keypair, instruction, assistant)
+    init_multisig_op(test_context, multisig_op_keypair, instruction, initiator)
         .await
         .map(|_| multisig_op_pubkey)
 }
@@ -255,12 +255,12 @@ pub async fn finalize_wallet_config_policy_update(
 pub async fn update_wallet_config_policy(
     test_context: &mut TestContext,
     wallet_account: Pubkey,
-    assistant_account: &Keypair,
+    initiatoraccount: &Keypair,
     update: &WalletConfigPolicyUpdate,
     approvers: Vec<&Keypair>,
 ) {
     let multisig_op_account =
-        init_wallet_config_policy_update(test_context, wallet_account, &assistant_account, &update)
+        init_wallet_config_policy_update(test_context, wallet_account, &initiatoraccount, &update)
             .await
             .unwrap();
 
@@ -579,7 +579,7 @@ pub async fn account_settings_update(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 context.balance_account_guid_hash,
                 whitelist_status,
                 dapps_enabled,
@@ -589,7 +589,7 @@ pub async fn account_settings_update(
         &[
             &context.payer,
             &multisig_op_account,
-            &context.assistant_account,
+            &context.initiator_account,
         ],
         context.recent_blockhash,
     );
@@ -737,7 +737,7 @@ pub async fn account_settings_update(
 pub async fn init_dapp_book_update(
     test_context: &mut TestContext,
     wallet_account: Pubkey,
-    assistant: &Keypair,
+    initiator: &Keypair,
     update: DAppBookUpdate,
 ) -> Result<Pubkey, TransportError> {
     let multisig_op_keypair = Keypair::new();
@@ -747,11 +747,11 @@ pub async fn init_dapp_book_update(
         &test_context.program_id,
         &wallet_account,
         &multisig_op_pubkey,
-        &assistant.pubkey(),
+        &initiator.pubkey(),
         update,
     );
 
-    init_multisig_op(test_context, multisig_op_keypair, instruction, assistant)
+    init_multisig_op(test_context, multisig_op_keypair, instruction, initiator)
         .await
         .map(|_| multisig_op_pubkey)
 }
@@ -982,6 +982,7 @@ pub struct BalanceAccountTestContext {
     pub wallet_account: Keypair,
     pub multisig_op_account: Keypair,
     pub assistant_account: Keypair,
+    pub initiator_account: Keypair,
     pub approvers: Vec<Keypair>,
     pub recent_blockhash: Hash,
     pub expected_creation_params: BalanceAccountCreation,
@@ -1090,7 +1091,7 @@ pub async fn setup_balance_account_tests(
                 &program_id,
                 &wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &assistant_account.pubkey(),
+                &approvers[2].pubkey(),
                 SlotId::new(0),
                 balance_account_guid_hash,
                 balance_account_name_hash,
@@ -1103,7 +1104,7 @@ pub async fn setup_balance_account_tests(
             ),
         ],
         Some(&payer.pubkey()),
-        &[&payer, &multisig_op_account, &assistant_account],
+        &[&payer, &multisig_op_account, &approvers[2]],
         recent_blockhash,
     );
     banks_client
@@ -1166,6 +1167,7 @@ pub async fn setup_balance_account_tests(
         wallet_account,
         multisig_op_account,
         assistant_account,
+        initiator_account: Keypair::from_base58_string(&approvers[2].to_base58_string()),
         approvers,
         recent_blockhash,
         expected_creation_params,
@@ -1420,7 +1422,7 @@ pub async fn setup_transfer_test(
                     &context.program_id,
                     &context.wallet_account.pubkey(),
                     &multisig_op_account.pubkey(),
-                    &context.assistant_account.pubkey(),
+                    &context.initiator_account.pubkey(),
                     &balance_account,
                     &context.destination.pubkey(),
                     context.balance_account_guid_hash,
@@ -1434,7 +1436,7 @@ pub async fn setup_transfer_test(
             &[
                 &context.payer,
                 &multisig_op_account,
-                &context.assistant_account,
+                &context.initiator_account,
             ],
             context.recent_blockhash,
         ))
@@ -1494,7 +1496,7 @@ pub async fn modify_address_book_and_whitelist(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 entries_to_add.clone(),
                 entries_to_remove.clone(),
                 vec![BalanceAccountWhitelistUpdate {
@@ -1508,7 +1510,7 @@ pub async fn modify_address_book_and_whitelist(
         &[
             &context.payer,
             &multisig_op_account,
-            &context.assistant_account,
+            &context.initiator_account,
         ],
         context.recent_blockhash,
     );
@@ -1596,7 +1598,7 @@ pub async fn update_balance_account_name_hash(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 context.balance_account_guid_hash,
                 account_name_hash,
             ),
@@ -1605,7 +1607,7 @@ pub async fn update_balance_account_name_hash(
         &[
             &context.payer,
             &multisig_op_account,
-            &context.assistant_account,
+            &context.initiator_account,
         ],
         context.recent_blockhash,
     );
@@ -1687,7 +1689,7 @@ pub async fn update_balance_account_policy(
                 &context.program_id,
                 &context.wallet_account.pubkey(),
                 &multisig_op_account.pubkey(),
-                &context.assistant_account.pubkey(),
+                &context.initiator_account.pubkey(),
                 context.balance_account_guid_hash,
                 update.clone(),
             ),
@@ -1696,7 +1698,7 @@ pub async fn update_balance_account_policy(
         &[
             &context.payer,
             &multisig_op_account,
-            &context.assistant_account,
+            &context.initiator_account,
         ],
         context.recent_blockhash,
     );
