@@ -1,3 +1,4 @@
+use crate::constants::PUBKEY_BYTES;
 use crate::error::WalletError;
 use crate::handlers::utils::{
     create_associated_token_account_instruction, finalize_multisig_op, get_clock_from_next_account,
@@ -136,7 +137,7 @@ pub fn finalize(
     let rent_collector_account_info = next_account_info(accounts_iter)?;
     let clock = get_clock_from_next_account(accounts_iter)?;
 
-    let is_spl = token_mint.to_bytes() != [0; 32];
+    let is_spl = token_mint.to_bytes() != [0; PUBKEY_BYTES];
 
     if system_program_account.key != &system_program::id() {
         return Err(WalletError::AccountNotRecognized.into());

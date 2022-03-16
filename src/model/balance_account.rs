@@ -44,8 +44,8 @@ impl BalanceAccountNameHash {
         Self::new(&[0; NAME_HASH_BYTES])
     }
 
-    pub fn to_bytes(&self) -> &[u8; 32] {
-        <&[u8; 32]>::try_from(&self.0[..]).unwrap()
+    pub fn to_bytes(&self) -> &[u8; NAME_HASH_BYTES] {
+        <&[u8; NAME_HASH_BYTES]>::try_from(&self.0[..]).unwrap()
     }
 }
 

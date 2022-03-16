@@ -1,3 +1,4 @@
+use crate::constants::ADDRESS_BOOK_NAME_HASH_BYTES;
 use crate::model::wallet::Wallet;
 use crate::utils::Slots;
 use arrayref::{array_mut_ref, array_ref, array_refs, mut_array_refs};
@@ -10,19 +11,19 @@ pub type AddressBook = Slots<AddressBookEntry, { Wallet::MAX_ADDRESS_BOOK_ENTRIE
 pub type DAppBook = Slots<DAppBookEntry, { Wallet::MAX_DAPP_BOOK_ENTRIES }>;
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Copy)]
-pub struct AddressBookEntryNameHash([u8; 32]);
+pub struct AddressBookEntryNameHash([u8; ADDRESS_BOOK_NAME_HASH_BYTES]);
 
 impl AddressBookEntryNameHash {
-    pub fn new(bytes: &[u8; 32]) -> Self {
+    pub fn new(bytes: &[u8; ADDRESS_BOOK_NAME_HASH_BYTES]) -> Self {
         Self(*bytes)
     }
 
     pub fn zero() -> Self {
-        Self::new(&[0; 32])
+        Self::new(&[0; ADDRESS_BOOK_NAME_HASH_BYTES])
     }
 
-    pub fn to_bytes(&self) -> &[u8; 32] {
-        <&[u8; 32]>::try_from(&self.0[..]).unwrap()
+    pub fn to_bytes(&self) -> &[u8; ADDRESS_BOOK_NAME_HASH_BYTES] {
+        <&[u8; ADDRESS_BOOK_NAME_HASH_BYTES]>::try_from(&self.0[..]).unwrap()
     }
 }
 
@@ -39,7 +40,7 @@ impl Pack for AddressBookEntry {
 
     fn pack_into_slice(&self, dst: &mut [u8]) {
         let dst = array_mut_ref![dst, 0, AddressBookEntry::LEN];
-        let (address_dst, name_hash_dst) = mut_array_refs![dst, 32, 32];
+        let (address_dst, name_hash_dst) = mut_array_refs![dst, 32, ADDRESS_BOOK_NAME_HASH_BYTES];
 
         address_dst.copy_from_slice(self.address.as_ref());
         name_hash_dst.copy_from_slice(self.name_hash.to_bytes());
@@ -47,7 +48,7 @@ impl Pack for AddressBookEntry {
 
     fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         let src = array_ref![src, 0, AddressBookEntry::LEN];
-        let (address_bytes, name_hash_bytes) = array_refs![src, 32, 32];
+        let (address_bytes, name_hash_bytes) = array_refs![src, 32, ADDRESS_BOOK_NAME_HASH_BYTES];
 
         Ok(AddressBookEntry {
             address: Pubkey::new_from_array(*address_bytes),
