@@ -39,7 +39,7 @@ pub fn init(
         return Err(WalletError::DAppsDisabled.into());
     }
 
-    wallet.validate_transfer_initiator(&balance_account, initiator_account_info)?;
+    wallet.validate_transfer_initiator(initiator_account_info)?;
 
     if !balance_account.is_whitelist_disabled() {
         if !wallet.dapp_allowed(dapp) {

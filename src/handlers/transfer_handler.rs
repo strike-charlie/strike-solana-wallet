@@ -50,7 +50,7 @@ pub fn init(
         return Err(WalletError::DestinationNotAllowed.into());
     }
 
-    wallet.validate_transfer_initiator(&balance_account, initiator_account_info)?;
+    wallet.validate_transfer_initiator(initiator_account_info)?;
 
     if *token_mint.key != Pubkey::default() && *destination_token_account.owner == Pubkey::default()
     {

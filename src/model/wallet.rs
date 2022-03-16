@@ -112,11 +112,7 @@ impl Wallet {
         return self.validate_initiator(initiator, || self.get_signers_keys());
     }
 
-    pub fn validate_transfer_initiator(
-        &self,
-        _balance_account: &BalanceAccount,
-        initiator: &AccountInfo,
-    ) -> ProgramResult {
+    pub fn validate_transfer_initiator(&self, initiator: &AccountInfo) -> ProgramResult {
         return self.validate_initiator(initiator, || self.get_signers_keys());
     }
 

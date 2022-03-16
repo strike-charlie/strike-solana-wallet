@@ -42,7 +42,7 @@ pub fn init(
     let wallet = Wallet::unpack(&wallet_account_info.data.borrow())?;
     let balance_account = wallet.get_balance_account(&account_guid_hash)?;
 
-    wallet.validate_transfer_initiator(&balance_account, initiator_account)?;
+    wallet.validate_transfer_initiator(initiator_account)?;
 
     if direction == WrapDirection::WRAP && *wrapped_sol_account_info.owner == Pubkey::default() {
         // we need to create the wrapped SOL account (if it had been created already

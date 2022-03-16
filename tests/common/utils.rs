@@ -255,12 +255,12 @@ pub async fn finalize_wallet_config_policy_update(
 pub async fn update_wallet_config_policy(
     test_context: &mut TestContext,
     wallet_account: Pubkey,
-    initiatoraccount: &Keypair,
+    initiator_account: &Keypair,
     update: &WalletConfigPolicyUpdate,
     approvers: Vec<&Keypair>,
 ) {
     let multisig_op_account =
-        init_wallet_config_policy_update(test_context, wallet_account, &initiatoraccount, &update)
+        init_wallet_config_policy_update(test_context, wallet_account, &initiator_account, &update)
             .await
             .unwrap();
 
