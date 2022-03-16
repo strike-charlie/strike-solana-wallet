@@ -535,6 +535,7 @@ pub fn init_dapp_transaction(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
+    multisig_data_account: &Pubkey,
     initiator_account: &Pubkey,
     account_guid_hash: &BalanceAccountGuidHash,
     dapp: DAppBookEntry,
@@ -550,6 +551,7 @@ pub fn init_dapp_transaction(
 
     let accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*multisig_data_account, false),
         AccountMeta::new_readonly(*wallet_account, false),
         AccountMeta::new_readonly(*initiator_account, true),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
@@ -566,6 +568,7 @@ pub fn finalize_dapp_transaction(
     program_id: &Pubkey,
     wallet_account: &Pubkey,
     multisig_op_account: &Pubkey,
+    multisig_data_account: &Pubkey,
     balance_account: &Pubkey,
     rent_collector_account: &Pubkey,
     account_guid_hash: &BalanceAccountGuidHash,
@@ -583,6 +586,7 @@ pub fn finalize_dapp_transaction(
     // the accounts below are expected below in this order by finalize
     let mut accounts = vec![
         AccountMeta::new(*multisig_op_account, false),
+        AccountMeta::new(*multisig_data_account, false),
         AccountMeta::new_readonly(*wallet_account, false),
         AccountMeta::new(*balance_account, false),
         AccountMeta::new(*rent_collector_account, true),
@@ -593,6 +597,7 @@ pub fn finalize_dapp_transaction(
     // want to repeat keys
     let keys_to_skip = vec![
         *multisig_op_account,
+        *multisig_data_account,
         *wallet_account,
         *balance_account,
         *rent_collector_account,

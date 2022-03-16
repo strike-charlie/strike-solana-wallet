@@ -155,9 +155,10 @@ pub enum ProgramInstruction {
     FinalizeWalletConfigPolicyUpdate { update: WalletConfigPolicyUpdate },
 
     /// 0. `[writable]` The multisig operation account
-    /// 1. `[]` The wallet account
-    /// 2. `[signer]` The initiator account (either the transaction assistant or an approver)
-    /// 3. `[]` The sysvar clock account
+    /// 1. `[writable]` The multisig data account
+    /// 2. `[]` The wallet account
+    /// 3. `[signer]` The initiator account (either the transaction assistant or an approver)
+    /// 4. `[]` The sysvar clock account
     InitDAppTransaction {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,
@@ -165,10 +166,11 @@ pub enum ProgramInstruction {
     },
 
     /// 0. `[writable]` The multisig operation account
-    /// 1. `[]` The wallet account
-    /// 2. `[writable]` The balance account
-    /// 3. `[signer]` The rent collector account
-    /// 4. `[]` The sysvar clock account
+    /// 1. `[writable]` The multisig data account
+    /// 2. `[]` The wallet account
+    /// 3. `[writable]` The balance account
+    /// 4. `[signer]` The rent collector account
+    /// 5. `[]` The sysvar clock account
     FinalizeDAppTransaction {
         account_guid_hash: BalanceAccountGuidHash,
         instructions: Vec<Instruction>,

@@ -7,6 +7,7 @@ use crate::handlers::utils::{
 };
 use crate::model::address_book::DAppBookEntry;
 use crate::model::balance_account::BalanceAccountGuidHash;
+use crate::model::dapp_multisig_data::DAppMultisigData;
 use crate::model::multisig_op::{MultisigOp, MultisigOpParams};
 use crate::model::wallet::Wallet;
 use solana_program::account_info::{next_account_info, AccountInfo};
@@ -28,6 +29,7 @@ pub fn init(
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let multisig_op_account_info = next_program_account_info(accounts_iter, program_id)?;
+    let multisig_data_account_info = next_program_account_info(accounts_iter, program_id)?;
     let wallet_account_info = next_program_account_info(accounts_iter, program_id)?;
     let initiator_account_info = next_account_info(accounts_iter)?;
     let clock = get_clock_from_next_account(accounts_iter)?;
@@ -47,6 +49,8 @@ pub fn init(
         }
     }
 
+    let instructions_len = instructions.len();
+
     let mut multisig_op = MultisigOp::unpack_unchecked(&multisig_op_account_info.data.borrow())?;
     multisig_op.init(
         wallet.get_transfer_approvers_keys(&balance_account),
@@ -64,6 +68,20 @@ pub fn init(
         },
     )?;
     MultisigOp::pack(multisig_op, &mut multisig_op_account_info.data.borrow_mut())?;
+
+    let mut multisig_data =
+        DAppMultisigData::unpack_unchecked(&multisig_data_account_info.data.borrow())?;
+    multisig_data.init(
+        *wallet_account_info.key,
+        *account_guid_hash,
+        dapp,
+        instructions_len.as_u16(),
+    )?;
+    DAppMultisigData::pack(
+        multisig_data,
+        &mut multisig_data_account_info.data.borrow_mut(),
+    )?;
+
     Ok(())
 }
 
@@ -159,6 +177,7 @@ pub fn finalize(
 ) -> ProgramResult {
     let accounts_iter = &mut accounts.iter();
     let multisig_op_account_info = next_program_account_info(accounts_iter, program_id)?;
+    let multisig_data_account_info = next_program_account_info(accounts_iter, program_id)?;
     let wallet_account_info = next_program_account_info(accounts_iter, program_id)?;
     let balance_account = next_account_info(accounts_iter)?;
     let rent_collector_account_info = next_account_info(accounts_iter)?;
@@ -212,6 +231,7 @@ pub fn finalize(
 
     if is_final {
         collect_remaining_balance(&multisig_op_account_info, &rent_collector_account_info)?;
+        collect_remaining_balance(&multisig_data_account_info, &rent_collector_account_info)?;
 
         Ok(())
     } else {
