@@ -101,8 +101,7 @@ impl Pack for DAppMultisigData {
             .take(MAX_INSTRUCTION_COUNT)
             .enumerate()
             .for_each(|(i, chunk)| {
-                chunk[0] = (instruction_offsets[i] & 0xFF) as u8;
-                chunk[1] = ((instruction_offsets[i] & 0xFF00) >> 8) as u8;
+                chunk.copy_from_slice(&instruction_offsets[i].to_le_bytes()[..2]);
             });
         instruction_data_dst.copy_from_slice(instruction_data);
     }
